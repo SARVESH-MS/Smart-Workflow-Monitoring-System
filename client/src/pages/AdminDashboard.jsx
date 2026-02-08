@@ -1,0 +1,333 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { listProjects, createProject } from "../api/projects.js";
+import { summary } from "../api/analytics.js";
+import StatCard from "../components/StatCard.jsx";
+import Table from "../components/Table.jsx";
+import Modal from "../components/Modal.jsx";
+import { formatDate } from "../utils/date.js";
+import CompletionChart from "../charts/CompletionChart.jsx";
+import DelayChart from "../charts/DelayChart.jsx";
+import { createSocket } from "../utils/socket.js";
+import { listUsers, updateUserPreferences } from "../api/users.js";
+import { listTemplates, updateTemplate } from "../api/templates.js";
+import { listEmailLogs } from "../api/emails.js";
+import GlobalSearch from "../components/GlobalSearch.jsx";
+import DigestSender from "../components/DigestSender.jsx";
+
+const AdminDashboard = () => {
+  const [projects, setProjects] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [managers, setManagers] = useState([]);
+  const [templates, setTemplates] = useState({});
+  const [emailsOpen, setEmailsOpen] = useState(false);
+  const [emailLogs, setEmailLogs] = useState([]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    deadline: "",
+    managerId: "",
+    workflow: ["Planning", "Design", "Development", "Testing", "Done"]
+  });
+
+  const load = async () => {
+    const [projectsData, statsData, usersData, managerData, templateData] = await Promise.all([
+      listProjects(),
+      summary(),
+      listUsers(),
+      listUsers("manager"),
+      listTemplates()
+    ]);
+    setProjects(projectsData);
+    setStats(statsData);
+    setUsers(usersData);
+    setManagers(managerData);
+    const map = {};
+    templateData.forEach((t) => {
+      map[t.key] = t;
+    });
+    setTemplates(map);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+  useEffect(() => {
+    const socket = createSocket();
+    socket.on("project:created", load);
+    socket.on("project:updated", load);
+    socket.on("task:updated", load);
+    return () => socket.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!emailsOpen) return;
+    listEmailLogs().then(setEmailLogs);
+  }, [emailsOpen]);
+
+  const columns = useMemo(
+    () => [
+      { key: "name", label: "Project" },
+      { key: "description", label: "Description" },
+      { key: "deadline", label: "Deadline" },
+      { key: "status", label: "Status" }
+    ],
+    []
+  );
+
+  const rows = projects.map((project) => ({
+    ...project,
+    deadline: formatDate(project.deadline)
+  }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await createProject(form);
+    setOpen(false);
+    setForm({
+      name: "",
+      description: "",
+      deadline: "",
+      managerId: "",
+      workflow: ["Planning", "Design", "Development", "Testing", "Done"]
+    });
+    load();
+  };
+
+  return (
+    <div className="grid gap-6">
+      <div id="overview" className="flex flex-wrap items-center justify-between gap-4 scroll-mt-6">
+        <div>
+          <h1 className="text-3xl font-semibold">Admin Dashboard</h1>
+          <p className="text-slate-400">Portfolio view across all teams</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn-ghost" onClick={() => setEmailsOpen(true)}>Emails</button>
+          <button className="btn-primary" onClick={() => setOpen(true)}>Add Project</button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <StatCard label="Projects" value={stats?.projects ?? "-"} />
+        <StatCard label="Total Tasks" value={stats?.totalTasks ?? "-"} />
+        <StatCard label="Delays" value={stats?.delayed ?? "-"} />
+        <StatCard label="Completion" value={`${stats?.completionRate ?? "-"}%`} />
+      </div>
+
+      <GlobalSearch />
+
+      <div id="tasks" className="scroll-mt-6">
+        <Table columns={columns} data={rows} />
+      </div>
+
+      <div id="reports" className="grid gap-4 md:grid-cols-2 scroll-mt-6">
+        <div className="card">
+          <h3 className="text-lg font-semibold">Workflow Builder</h3>
+          <p className="text-sm text-slate-400">Drag and reorder stages</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {form.workflow.map((stage) => (
+              <div key={stage} draggable className="rounded-full border border-slate-700 px-3 py-1 text-xs">
+                {stage}
+              </div>
+            ))}
+          </div>
+        </div>
+        <CompletionChart completed={stats?.completed ?? 0} total={stats?.totalTasks ?? 0} />
+      </div>
+
+      <div id="alerts" className="grid gap-4 md:grid-cols-2 scroll-mt-6">
+        <DelayChart delayed={stats?.delayed ?? 0} onTime={(stats?.totalTasks ?? 0) - (stats?.delayed ?? 0)} />
+        <div className="card">
+          <h3 className="text-lg font-semibold">Analytics Snapshot</h3>
+          <p className="text-sm text-slate-400">Live completion and delay rates.</p>
+          <div className="mt-4 grid gap-2 text-sm text-slate-300">
+            <div>Time Spent: {stats?.timeSpent ?? 0} mins</div>
+            <div>Completion Rate: {stats?.completionRate ?? 0}%</div>
+            <div>Delayed Tasks: {stats?.delayed ?? 0}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="text-lg font-semibold">User Notification Overrides</h3>
+        <p className="text-sm text-slate-400">Admin can update team preferences.</p>
+        <div className="mt-4 overflow-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-400">
+              <tr>
+                <th className="py-2 pr-4">User</th>
+                <th className="py-2 pr-4">Role</th>
+                <th className="py-2 pr-4">Email Delay</th>
+                <th className="py-2 pr-4">Email Complete</th>
+                <th className="py-2 pr-4">SMS Delay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user._id} className="border-t border-slate-800">
+                  <td className="py-2 pr-4">
+                    <div className="text-slate-200">{user.name}</div>
+                    <div className="text-xs text-slate-500">{user.email}</div>
+                  </td>
+                  <td className="py-2 pr-4 text-slate-300">{user.role}</td>
+                  {[
+                    { key: "emailDelay", label: "Email Delay" },
+                    { key: "emailComplete", label: "Email Complete" },
+                    { key: "smsDelay", label: "SMS Delay" }
+                  ].map((pref) => (
+                    <td key={pref.key} className="py-2 pr-4">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-blue-500"
+                        checked={Boolean(user.notificationPrefs?.[pref.key])}
+                        onChange={async (e) => {
+                          const next = {
+                            emailDelay: Boolean(user.notificationPrefs?.emailDelay),
+                            emailComplete: Boolean(user.notificationPrefs?.emailComplete),
+                            smsDelay: Boolean(user.notificationPrefs?.smsDelay),
+                            [pref.key]: e.target.checked
+                          };
+                          await updateUserPreferences(user._id, next);
+                          setUsers((prev) =>
+                            prev.map((u) =>
+                              u._id === user._id ? { ...u, notificationPrefs: next } : u
+                            )
+                          );
+                        }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="digest" className="scroll-mt-6">
+        <DigestSender />
+      </div>
+
+      <div id="templates" className="card scroll-mt-6">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setTemplatesOpen((prev) => !prev)}
+        >
+          <div>
+            <h3 className="text-lg font-semibold">Notification Templates</h3>
+            <p className="text-sm text-slate-400">Edit email/Slack templates.</p>
+          </div>
+          <span className="text-xl text-slate-400">{templatesOpen ? "▾" : "▸"}</span>
+        </button>
+        {templatesOpen && (
+          <div className="mt-4 grid gap-4">
+          {[
+            { key: "task.delay.email", label: "Task Delay Email" },
+            { key: "task.complete.email", label: "Task Complete Email" },
+            { key: "task.assigned.email", label: "Task Assigned Email" },
+            { key: "task.delay.slack", label: "Task Delay Slack" },
+            { key: "task.complete.slack", label: "Task Complete Slack" },
+            { key: "task.assigned.slack", label: "Task Assigned Slack" }
+          ].map((tpl) => (
+              <div key={tpl.key} className="rounded-xl border border-slate-800 p-4">
+                <div className="text-sm font-semibold">{tpl.label}</div>
+                <input
+                  className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm"
+                  placeholder="Subject"
+                  value={templates[tpl.key]?.subject || ""}
+                  onChange={(e) =>
+                    setTemplates((prev) => ({
+                      ...prev,
+                      [tpl.key]: { ...(prev[tpl.key] || {}), subject: e.target.value }
+                    }))
+                  }
+                />
+                <textarea
+                  className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm"
+                  rows={4}
+                  placeholder="Body (HTML allowed). Use {{task.title}}, {{project.name}}, {{user.name}}, {{task.deadline}}"
+                  value={templates[tpl.key]?.body || ""}
+                  onChange={(e) =>
+                    setTemplates((prev) => ({
+                      ...prev,
+                      [tpl.key]: { ...(prev[tpl.key] || {}), body: e.target.value }
+                    }))
+                  }
+                />
+                <div className="mt-3 flex justify-end">
+                  <button
+                    className="btn-ghost"
+                    onClick={async () => {
+                      const payload = {
+                        subject: templates[tpl.key]?.subject || "",
+                        body: templates[tpl.key]?.body || ""
+                      };
+                      const saved = await updateTemplate(tpl.key, payload);
+                      setTemplates((prev) => ({ ...prev, [tpl.key]: saved }));
+                    }}
+                  >
+                    Save Template
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Modal open={open} title="Add New Project" onClose={() => setOpen(false)}>
+        <form className="grid gap-3" onSubmit={handleSubmit}>
+          <input
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
+            placeholder="Project name"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+          <textarea
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
+            placeholder="Description"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+          />
+          <input
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
+            type="date"
+            value={form.deadline}
+            onChange={(e) => setForm({ ...form, deadline: e.target.value })}
+          />
+          <select
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
+            value={form.managerId}
+            onChange={(e) => setForm({ ...form, managerId: e.target.value })}
+          >
+            <option value="">Select manager</option>
+            {managers.map((mgr) => (
+              <option key={mgr._id} value={mgr._id}>
+                {mgr.name} ({mgr.email})
+              </option>
+            ))}
+          </select>
+          <button className="btn-primary" type="submit">Create Project</button>
+        </form>
+      </Modal>
+
+      <Modal open={emailsOpen} title="Sent Emails" onClose={() => setEmailsOpen(false)}>
+        <div className="grid gap-3 text-sm">
+          {emailLogs.length === 0 && <div className="text-slate-400">No emails logged yet.</div>}
+          {emailLogs.map((log) => (
+            <div key={log._id} className="rounded-xl border border-slate-800 p-3">
+              <div className="text-xs text-slate-400">{new Date(log.createdAt).toLocaleString()}</div>
+              <div className="mt-1 text-slate-200"><strong>To:</strong> {log.to}</div>
+              <div className="text-slate-200"><strong>Subject:</strong> {log.subject || "-"}</div>
+              <div className="mt-2 text-xs text-slate-400">Template: {log.templateKey || "-"}</div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default AdminDashboard;

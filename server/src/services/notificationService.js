@@ -1,0 +1,219 @@
+import { sendEmail } from "./emailService.js";
+import { sendSms } from "./smsService.js";
+import NotificationTemplate from "../models/NotificationTemplate.js";
+import { sendSlack } from "./slackService.js";
+import EmailLog from "../models/EmailLog.js";
+import Notification from "../models/Notification.js";
+
+const shouldNotifyDelay = () => String(process.env.NOTIFY_ON_DELAY).toLowerCase() === "true";
+const shouldNotifyComplete = () => String(process.env.NOTIFY_ON_COMPLETE).toLowerCase() === "true";
+
+const userPref = (user, key, fallback) => {
+  if (!user || !user.notificationPrefs) return fallback;
+  return Boolean(user.notificationPrefs[key]);
+};
+
+const renderTemplate = (template, data) => {
+  return template.replace(/\{\{(.*?)\}\}/g, (_, key) => {
+    const path = key.trim().split(".");
+    let value = data;
+    path.forEach((p) => {
+      value = value && value[p];
+    });
+    return value ?? "";
+  });
+};
+
+const getTemplate = async (key, fallback) => {
+  const tpl = await NotificationTemplate.findOne({ key });
+  return tpl || fallback;
+};
+
+export const notifyDelay = async ({ user, manager, task, project }) => {
+  if (!shouldNotifyDelay()) return;
+  if (!userPref(user, "emailDelay", true) && !userPref(manager, "emailDelay", true)) return;
+  const fallback = {
+    subject: `Task delayed: ${task.title}`,
+    body: `
+      <div>
+        <h2>Task Delay Alert</h2>
+        <p><strong>Task:</strong> {{task.title}}</p>
+        <p><strong>Project:</strong> {{project.name}}</p>
+        <p><strong>Assigned:</strong> {{user.name}} ({{user.email}})</p>
+        <p><strong>Deadline:</strong> {{task.deadline}}</p>
+        <p>Please review and adjust timelines as needed.</p>
+      </div>
+    `
+  };
+  const template = await getTemplate("task.delay.email", fallback);
+  const subject = renderTemplate(template.subject || fallback.subject, { task, project, user, manager });
+  const html = renderTemplate(template.body || fallback.body, {
+    task: { ...task, deadline: new Date(task.deadline).toLocaleString() },
+    project,
+    user,
+    manager
+  });
+
+  const recipients = [
+    userPref(manager, "emailDelay", true) ? manager?.email : null,
+    userPref(user, "emailDelay", true) ? user?.email : null
+  ].filter(Boolean);
+  await Promise.all(
+    recipients.map((to) =>
+      sendEmail({ to, subject, html })
+        .then(() =>
+          EmailLog.create({
+            to,
+            subject,
+            body: html,
+            templateKey: "task.delay.email",
+            sentByRole: "system",
+            meta: { projectId: project?._id, taskId: task?._id }
+          })
+        )
+        .catch(() => null)
+    )
+  );
+
+  await Promise.all(
+    [user, manager]
+      .filter(Boolean)
+      .map((target) =>
+        Notification.create({
+          userId: target._id,
+          type: "task.delay",
+          title: `Task delayed: ${task.title}`,
+          message: `${project?.name || "Project"} | Deadline: ${new Date(task.deadline).toLocaleDateString()}`
+        }).catch(() => null)
+      )
+  );
+  const slackTpl = await getTemplate("task.delay.slack", { body: "Delay: {{task.title}} ({{project.name}})" });
+  const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });
+  await sendSlack({ text: slackText }).catch(() => null);
+};
+
+export const notifyComplete = async ({ user, manager, task, project }) => {
+  if (!shouldNotifyComplete()) return;
+  if (!userPref(user, "emailComplete", false) && !userPref(manager, "emailComplete", false)) return;
+  const fallback = {
+    subject: `Task completed: ${task.title}`,
+    body: `
+      <div>
+        <h2>Task Completed</h2>
+        <p><strong>Task:</strong> {{task.title}}</p>
+        <p><strong>Project:</strong> {{project.name}}</p>
+        <p><strong>Assigned:</strong> {{user.name}} ({{user.email}})</p>
+        <p>Great work!</p>
+      </div>
+    `
+  };
+  const template = await getTemplate("task.complete.email", fallback);
+  const subject = renderTemplate(template.subject || fallback.subject, { task, project, user, manager });
+  const html = renderTemplate(template.body || fallback.body, { task, project, user, manager });
+
+  const recipients = [
+    userPref(manager, "emailComplete", false) ? manager?.email : null,
+    userPref(user, "emailComplete", false) ? user?.email : null
+  ].filter(Boolean);
+  await Promise.all(
+    recipients.map((to) =>
+      sendEmail({ to, subject, html })
+        .then(() =>
+          EmailLog.create({
+            to,
+            subject,
+            body: html,
+            templateKey: "task.complete.email",
+            sentByRole: "system",
+            meta: { projectId: project?._id, taskId: task?._id }
+          })
+        )
+        .catch(() => null)
+    )
+  );
+
+  await Promise.all(
+    [user, manager]
+      .filter(Boolean)
+      .map((target) =>
+        Notification.create({
+          userId: target._id,
+          type: "task.complete",
+          title: `Task completed: ${task.title}`,
+          message: `${project?.name || "Project"}`
+        }).catch(() => null)
+      )
+  );
+  const slackTpl = await getTemplate("task.complete.slack", { body: "Complete: {{task.title}} ({{project.name}})" });
+  const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });
+  await sendSlack({ text: slackText }).catch(() => null);
+};
+
+export const notifyAssigned = async ({ user, manager, task, project }) => {
+  const fallback = {
+    subject: `Task assigned: ${task.title}`,
+    body: `
+      <div>
+        <h2>New Task Assigned</h2>
+        <p><strong>Task:</strong> {{task.title}}</p>
+        <p><strong>Project:</strong> {{project.name}}</p>
+        <p><strong>Assigned to:</strong> {{user.name}} ({{user.email}})</p>
+        <p><strong>Deadline:</strong> {{task.deadline}}</p>
+      </div>
+    `
+  };
+  const template = await getTemplate("task.assigned.email", fallback);
+  const subject = renderTemplate(template.subject || fallback.subject, { task, project, user, manager });
+  const html = renderTemplate(template.body || fallback.body, {
+    task: { ...task, deadline: new Date(task.deadline).toLocaleString() },
+    project,
+    user,
+    manager
+  });
+
+  const recipients = [manager?.email, user?.email].filter(Boolean);
+  await Promise.all(
+    recipients.map((to) =>
+      sendEmail({ to, subject, html })
+        .then(() =>
+          EmailLog.create({
+            to,
+            subject,
+            body: html,
+            templateKey: "task.assigned.email",
+            sentByRole: "system",
+            meta: { projectId: project?._id, taskId: task?._id }
+          })
+        )
+        .catch(() => null)
+    )
+  );
+
+  await Promise.all(
+    [user, manager]
+      .filter(Boolean)
+      .map((target) =>
+        Notification.create({
+          userId: target._id,
+          type: "task.assigned",
+          title: `Task assigned: ${task.title}`,
+          message: `${project?.name || "Project"} | Deadline: ${new Date(task.deadline).toLocaleDateString()}`
+        }).catch(() => null)
+      )
+  );
+
+  const slackTpl = await getTemplate("task.assigned.slack", { body: "Assigned: {{task.title}} ({{project.name}})" });
+  const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });
+  await sendSlack({ text: slackText }).catch(() => null);
+};
+
+export const notifyDelaySms = async ({ user, manager, task, project }) => {
+  if (!shouldNotifyDelay()) return;
+  if (!userPref(user, "smsDelay", false) && !userPref(manager, "smsDelay", false)) return;
+  const body = `Delay Alert: ${task.title} for ${project.name} is past deadline.`;
+  const numbers = [
+    userPref(manager, "smsDelay", false) ? manager?.phone : null,
+    userPref(user, "smsDelay", false) ? user?.phone : null
+  ].filter(Boolean);
+  await Promise.all(numbers.map((to) => sendSms({ to, body }).catch(() => null)));
+};
