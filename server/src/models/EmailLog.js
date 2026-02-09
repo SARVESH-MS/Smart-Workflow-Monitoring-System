@@ -8,7 +8,8 @@ const EmailLogSchema = new mongoose.Schema(
     templateKey: { type: String },
     sentByRole: { type: String, default: "system" },
     sentById: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    meta: { type: Object }
+    meta: { type: Object },
+    read: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

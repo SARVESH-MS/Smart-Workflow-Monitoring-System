@@ -118,3 +118,14 @@ All passwords: `Password123!`
 - Time tracking with start/stop timer per task
 - Delay detection runs on task updates and deadline checks
 - Email/SMS notifications configurable via `.env.notifications.example`
+
+### Task Templates & Recurring
+Interval days: 7 → create a new task every 7 days (weekly).
+Occurrences: 5 → create it 5 times total.
+So with today as Feb 9, 2026, it would create tasks on:
+
+Feb 9, 2026
+Feb 16, 2026
+Feb 23, 2026
+Mar 2, 2026
+Mar 9, 2026

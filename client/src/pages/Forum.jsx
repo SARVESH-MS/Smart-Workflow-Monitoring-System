@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getMyRoom, listMessages, sendMessage, uploadFile, attachFile } from "../api/forum.js";
+import {
+  getMyRoom,
+  listMessages,
+  sendMessage,
+  uploadFile,
+  attachFile,
+  markForumRead
+} from "../api/forum.js";
 import { useAuth } from "../utils/AuthContext.jsx";
 import { createSocket } from "../utils/socket.js";
 
@@ -15,7 +22,6 @@ const Forum = () => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-
   const load = async () => {
     const roomData = await getMyRoom();
     setRoom(roomData);
@@ -28,10 +34,17 @@ const Forum = () => {
   }, []);
 
   useEffect(() => {
+    if (room?._id) {
+      markForumRead();
+    }
+  }, [room?._id]);
+
+  useEffect(() => {
     const socket = createSocket();
     socket.on("forum:message", (msg) => {
       if (msg.roomId === room?._id) {
         setMessages((prev) => (prev.some((m) => m._id === msg._id) ? prev : [...prev, msg]));
+        markForumRead();
       }
     });
     socket.on("forum:message_updated", (msg) => {
@@ -100,7 +113,7 @@ const Forum = () => {
             aria-label="Back"
             title="Back"
           >
-            ←
+            {"<-"}
           </button>
           <div>
             <h2 className="text-xl font-semibold">{room?.name || "Team Discussion"}</h2>

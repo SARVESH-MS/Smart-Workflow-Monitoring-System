@@ -2,6 +2,7 @@ import path from "path";
 import { z } from "zod";
 import ForumRoom from "../models/ForumRoom.js";
 import ForumMessage from "../models/ForumMessage.js";
+import ForumRead from "../models/ForumRead.js";
 import User from "../models/User.js";
 
 const messageSchema = z.object({
@@ -27,6 +28,22 @@ export const getMyRoom = async (req, res) => {
   res.json(room);
 };
 
+const resolveRoomForUser = async (req) => {
+  let managerId = req.user.role === "manager" ? req.user.id : null;
+  if (req.user.role === "employee") {
+    const user = await User.findById(req.user.id);
+    managerId = user?.managerId;
+  }
+  if (!managerId) return null;
+  let room = await ForumRoom.findOne({ managerId });
+  if (!room) {
+    const manager = await User.findById(managerId);
+    const name = manager ? `${manager.name} Team Discussion` : "Team Discussion";
+    room = await ForumRoom.create({ managerId, name });
+  }
+  return room;
+};
+
 export const listMessages = async (req, res) => {
   const roomId = req.query.roomId;
   if (!roomId) {
@@ -36,6 +53,44 @@ export const listMessages = async (req, res) => {
     .sort({ createdAt: 1 })
     .populate("userId", "name email role");
   res.json(messages);
+};
+
+export const getUnreadCount = async (req, res) => {
+  const room = await resolveRoomForUser(req);
+  if (!room) {
+    return res.status(400).json({ message: "No team assigned" });
+  }
+  const readState = await ForumRead.findOne({ roomId: room._id, userId: req.user.id });
+  const since = readState?.lastReadAt;
+  const query = {
+    roomId: room._id,
+    userId: { $ne: req.user.id }
+  };
+  if (since) {
+    query.createdAt = { $gt: since };
+  }
+  const [count, latest] = await Promise.all([
+    ForumMessage.countDocuments(query),
+    ForumMessage.findOne(query).sort({ createdAt: -1 }).populate("userId", "name role")
+  ]);
+  res.json({
+    count,
+    latestSenderName: latest?.userId?.name || null
+  });
+};
+
+export const markRead = async (req, res) => {
+  const room = await resolveRoomForUser(req);
+  if (!room) {
+    return res.status(400).json({ message: "No team assigned" });
+  }
+  const now = new Date();
+  await ForumRead.findOneAndUpdate(
+    { roomId: room._id, userId: req.user.id },
+    { lastReadAt: now },
+    { upsert: true, new: true }
+  );
+  res.json({ success: true });
 };
 
 export const createMessage = async (req, res) => {

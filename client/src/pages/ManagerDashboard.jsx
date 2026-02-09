@@ -15,7 +15,9 @@ import { bulkUpdateTasks } from "../api/bulk.js";
 import GlobalSearch from "../components/GlobalSearch.jsx";
 import AvailabilityCard from "../components/AvailabilityCard.jsx";
 import PerformanceScorecard from "../components/PerformanceScorecard.jsx";
-import NotificationList from "../components/NotificationList.jsx";
+import { listMyEmailUnreadCount } from "../api/emails.js";
+import { listMyNotificationUnreadCount } from "../api/notifications.js";
+import { getUnreadForumCount } from "../api/forum.js";
 
 const ManagerDashboard = () => {
   const { id } = useParams();
@@ -50,6 +52,10 @@ const ManagerDashboard = () => {
   const totalTimeSpent = tasks.reduce((sum, task) => sum + (task.timeSpent || 0), 0);
   const [deadlineEdits, setDeadlineEdits] = useState({});
   const [open, setOpen] = useState(false);
+  const [unreadEmails, setUnreadEmails] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadForum, setUnreadForum] = useState(0);
+  const [forumSender, setForumSender] = useState("");
   const [form, setForm] = useState({
     projectId: "",
     userId: "",
@@ -76,13 +82,36 @@ const ManagerDashboard = () => {
     });
   };
 
+  const loadBadges = async () => {
+    const [emailsRes, notifRes, forumRes] = await Promise.all([
+      listMyEmailUnreadCount(),
+      listMyNotificationUnreadCount(),
+      getUnreadForumCount()
+    ]);
+    setUnreadEmails(emailsRes.count || 0);
+    setUnreadNotifications(notifRes.count || 0);
+    setUnreadForum(forumRes.count || 0);
+    setForumSender(forumRes.latestSenderName || "");
+  };
+
   useEffect(() => {
     load();
   }, [id]);
   useEffect(() => {
+    loadBadges();
+    const timer = setInterval(loadBadges, 15000);
+    return () => clearInterval(timer);
+  }, [id]);
+  useEffect(() => {
     const socket = createSocket();
-    socket.on("task:created", load);
-    socket.on("task:updated", load);
+    socket.on("task:created", () => {
+      load();
+      loadBadges();
+    });
+    socket.on("task:updated", () => {
+      load();
+      loadBadges();
+    });
     socket.on("project:updated", load);
     return () => socket.disconnect();
   }, [id]);
@@ -221,8 +250,25 @@ const ManagerDashboard = () => {
           <p className="text-slate-400">Team overview and task assignments</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-ghost" onClick={() => navigate(`/manager/${id}/inbox`)}>Emails</button>
-          <button className="btn-ghost" onClick={() => navigate(`/manager/${id}/forum`)}>Team Discussion</button>
+          <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/inbox`)}>
+            Emails
+            {unreadEmails + unreadNotifications > 0 && (
+              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+                {unreadEmails + unreadNotifications}
+              </span>
+            )}
+          </button>
+          <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/forum`)}>
+            Team Discussion
+            {unreadForum > 0 && (
+              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+                {unreadForum}
+              </span>
+            )}
+          </button>
+          {unreadForum > 0 && forumSender && (
+            <span className="text-xs text-amber-300">New from {forumSender}</span>
+          )}
           <button className="btn-primary" onClick={() => setOpen(true)}>Assign Task</button>
         </div>
       </div>
@@ -252,8 +298,6 @@ const ManagerDashboard = () => {
           <div className="mt-4 text-sm text-amber-300">Live monitoring enabled.</div>
         </div>
       </div>
-
-      <NotificationList />
 
       <div id="tasks" className="scroll-mt-6">
         <GlobalSearch />

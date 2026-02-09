@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../utils/AuthContext.jsx";
-import { listMyEmails } from "../api/emails.js";
+import { listMyEmails, markMyEmailsRead } from "../api/emails.js";
+import NotificationList from "../components/NotificationList.jsx";
+import { markAllNotificationsRead } from "../api/notifications.js";
 
 const Inbox = () => {
   const [emails, setEmails] = useState([]);
@@ -11,6 +13,8 @@ const Inbox = () => {
 
   useEffect(() => {
     listMyEmails().then(setEmails);
+    markMyEmailsRead();
+    markAllNotificationsRead();
   }, []);
 
   const basePath = user?.role === "manager" ? `/manager/${params.id}` : `/employee/${params.id}`;
@@ -24,7 +28,7 @@ const Inbox = () => {
           aria-label="Back"
           title="Back"
         >
-          ←
+          {"<-"}
         </button>
         <div>
           <h2 className="text-xl font-semibold">Inbox</h2>
@@ -36,10 +40,19 @@ const Inbox = () => {
         {emails.map((log) => (
           <div key={log._id} className="rounded-xl border border-slate-800 p-3">
             <div className="text-xs text-slate-400">{new Date(log.createdAt).toLocaleString()}</div>
-            <div className="mt-1 text-slate-200"><strong>Subject:</strong> {log.subject || "-"}</div>
+            <div className="mt-1 text-slate-200">
+              <strong>Subject:</strong> {log.subject || "-"}
+            </div>
             <div className="mt-2 text-xs text-slate-400">Template: {log.templateKey || "-"}</div>
           </div>
         ))}
+      </div>
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold">In-app alerts for your tasks.</h3>
+        <p className="text-sm text-slate-400">Delay, completion, and assignment alerts appear here.</p>
+        <div className="mt-3">
+          <NotificationList />
+        </div>
       </div>
     </div>
   );

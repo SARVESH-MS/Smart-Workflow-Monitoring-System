@@ -8,13 +8,19 @@ import { formatDate, formatDurationHours } from "../utils/date.js";
 import CompletionChart from "../charts/CompletionChart.jsx";
 import DelayChart from "../charts/DelayChart.jsx";
 import AvailabilityCard from "../components/AvailabilityCard.jsx";
-import NotificationList from "../components/NotificationList.jsx";
 import { createSocket } from "../utils/socket.js";
+import { listMyEmailUnreadCount } from "../api/emails.js";
+import { listMyNotificationUnreadCount } from "../api/notifications.js";
+import { getUnreadForumCount } from "../api/forum.js";
 
 const EmployeeDashboard = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
+  const [unreadEmails, setUnreadEmails] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadForum, setUnreadForum] = useState(0);
+  const [forumSender, setForumSender] = useState("");
 
   const load = async () => {
     const data = await listTasks({ userId: id });
@@ -24,9 +30,30 @@ const EmployeeDashboard = () => {
   useEffect(() => {
     load();
   }, [id]);
+
+  const loadBadges = async () => {
+    const [emailsRes, notifRes, forumRes] = await Promise.all([
+      listMyEmailUnreadCount(),
+      listMyNotificationUnreadCount(),
+      getUnreadForumCount()
+    ]);
+    setUnreadEmails(emailsRes.count || 0);
+    setUnreadNotifications(notifRes.count || 0);
+    setUnreadForum(forumRes.count || 0);
+    setForumSender(forumRes.latestSenderName || "");
+  };
+
+  useEffect(() => {
+    loadBadges();
+    const timer = setInterval(loadBadges, 15000);
+    return () => clearInterval(timer);
+  }, [id]);
   useEffect(() => {
     const socket = createSocket();
-    socket.on("task:updated", load);
+    socket.on("task:updated", () => {
+      load();
+      loadBadges();
+    });
     return () => socket.disconnect();
   }, [id]);
 
@@ -95,8 +122,25 @@ const EmployeeDashboard = () => {
             <p className="text-slate-400">Track your tasks and time</p>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-ghost" onClick={() => navigate(`/employee/${id}/inbox`)}>Emails</button>
-            <button className="btn-ghost" onClick={() => navigate(`/employee/${id}/forum`)}>Team Discussion</button>
+          <button className="btn-ghost relative" onClick={() => navigate(`/employee/${id}/inbox`)}>
+            Emails
+            {unreadEmails + unreadNotifications > 0 && (
+              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+                {unreadEmails + unreadNotifications}
+              </span>
+            )}
+          </button>
+          <button className="btn-ghost relative" onClick={() => navigate(`/employee/${id}/forum`)}>
+            Team Discussion
+            {unreadForum > 0 && (
+              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+                {unreadForum}
+              </span>
+            )}
+          </button>
+          {unreadForum > 0 && forumSender && (
+            <span className="text-xs text-amber-300">New from {forumSender}</span>
+          )}
           </div>
         </div>
       <div id="alerts" className="card">
@@ -111,8 +155,6 @@ const EmployeeDashboard = () => {
         </div>
       </div>
     </div>
-
-      <NotificationList />
 
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Assigned Tasks" value={tasks.length} />

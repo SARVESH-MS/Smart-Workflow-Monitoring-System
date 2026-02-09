@@ -16,3 +16,16 @@ export const markRead = async (req, res) => {
   if (!item) return res.status(404).json({ message: "Notification not found" });
   res.json(item);
 };
+
+export const listMyUnreadNotificationCount = async (req, res) => {
+  const count = await Notification.countDocuments({ userId: req.user.id, read: false });
+  res.json({ count });
+};
+
+export const markAllRead = async (req, res) => {
+  const result = await Notification.updateMany(
+    { userId: req.user.id, read: false },
+    { $set: { read: true } }
+  );
+  res.json({ updated: result.modifiedCount });
+};

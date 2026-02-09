@@ -13,3 +13,5 @@ export const uploadFile = (file) => {
 };
 export const attachFile = (id, payload) =>
   api.post(`/api/forum/messages/${id}/attachments`, payload).then((res) => res.data);
+export const getUnreadForumCount = () => api.get("/api/forum/unread").then((res) => res.data);
+export const markForumRead = () => api.post("/api/forum/read").then((res) => res.data);

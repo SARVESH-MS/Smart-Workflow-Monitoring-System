@@ -7,6 +7,8 @@ import {
   getMyRoom,
   listMessages,
   createMessage,
+  getUnreadCount,
+  markRead,
   uploadAttachment,
   addAttachmentToMessage
 } from "../controllers/forumController.js";
@@ -28,6 +30,8 @@ const upload = multer({
 });
 
 router.get("/room", auth, asyncHandler(getMyRoom));
+router.get("/unread", auth, asyncHandler(getUnreadCount));
+router.post("/read", auth, asyncHandler(markRead));
 router.get("/messages", auth, asyncHandler(listMessages));
 router.post("/messages", auth, asyncHandler(createMessage));
 router.post("/upload", auth, upload.single("file"), asyncHandler(uploadAttachment));
