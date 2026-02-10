@@ -454,51 +454,67 @@ const ManagerDashboard = () => {
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-slate-800 p-4">
             <div className="text-sm font-semibold">Create Template</div>
-            <div className="mt-3 grid gap-2">
-              <input
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                placeholder="Template name"
-                value={templateForm.name}
-                onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
-              />
-              <textarea
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                placeholder="Description"
-                value={templateForm.description}
-                onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })}
-              />
-              <select
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                value={templateForm.roleContribution}
-                onChange={(e) => setTemplateForm({ ...templateForm, roleContribution: e.target.value })}
-              >
-                <option value="">Role</option>
-                <option value="Designer">Designer</option>
-                <option value="Frontend Developer">Frontend Developer</option>
-                <option value="Backend Developer">Backend Developer</option>
-                <option value="Tester">Tester</option>
-              </select>
-              <select
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                value={templateForm.stage}
-                onChange={(e) => setTemplateForm({ ...templateForm, stage: e.target.value })}
-              >
-                <option value="Planning">Planning</option>
-                <option value="Design">Design</option>
-                <option value="Development">Development</option>
-                <option value="Testing">Testing</option>
-                <option value="Done">Done</option>
-              </select>
-              <input
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                type="number"
-                min="1"
-                placeholder="Estimated days"
-                value={templateForm.estimatedDays}
-                onChange={(e) =>
-                  setTemplateForm({ ...templateForm, estimatedDays: Number(e.target.value) })
-                }
-              />
+            <div className="mt-3 grid gap-3">
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Template name</label>
+                <input
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  placeholder="Weekly QA Review"
+                  value={templateForm.name}
+                  onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Description</label>
+                <textarea
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  placeholder="Check staging build, run smoke tests, log bugs."
+                  value={templateForm.description}
+                  onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Role</label>
+                <select
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  value={templateForm.roleContribution}
+                  onChange={(e) => setTemplateForm({ ...templateForm, roleContribution: e.target.value })}
+                >
+                  <option value="">Select role</option>
+                  <option value="Designer">Designer</option>
+                  <option value="Frontend Developer">Frontend Developer</option>
+                  <option value="Backend Developer">Backend Developer</option>
+                  <option value="Tester">Tester</option>
+                </select>
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Stage</label>
+                <select
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  value={templateForm.stage}
+                  onChange={(e) => setTemplateForm({ ...templateForm, stage: e.target.value })}
+                >
+                  <option value="Planning">Planning</option>
+                  <option value="Design">Design</option>
+                  <option value="Development">Development</option>
+                  <option value="Testing">Testing</option>
+                  <option value="Done">Done</option>
+                </select>
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Estimated days</label>
+                <input
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  type="number"
+                  min="1"
+                  placeholder="3"
+                  value={templateForm.estimatedDays}
+                  onChange={(e) =>
+                    setTemplateForm({ ...templateForm, estimatedDays: Number(e.target.value) })
+                  }
+                />
+                <span className="text-[11px] text-slate-500">Used to project expected duration.</span>
+              </div>
               <button
                 className="btn-ghost"
                 onClick={async () => {
@@ -519,58 +535,77 @@ const ManagerDashboard = () => {
           </div>
           <div className="rounded-xl border border-slate-800 p-4">
             <div className="text-sm font-semibold">Create Recurring Tasks</div>
-            <div className="mt-3 grid gap-2">
-              <select
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                value={recurringForm.templateId}
-                onChange={(e) => setRecurringForm({ ...recurringForm, templateId: e.target.value })}
-              >
-                <option value="">Select template</option>
-                {templates.map((tpl) => (
-                  <option key={tpl._id} value={tpl._id}>{tpl.name}</option>
-                ))}
-              </select>
-              <select
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                value={recurringForm.projectId}
-                onChange={(e) => setRecurringForm({ ...recurringForm, projectId: e.target.value })}
-              >
-                <option value="">Select project</option>
-                {projects.map((project) => (
-                  <option key={project._id} value={project._id}>{project.name}</option>
-                ))}
-              </select>
-              <select
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                value={recurringForm.userId}
-                onChange={(e) => setRecurringForm({ ...recurringForm, userId: e.target.value })}
-              >
-                <option value="">Assign to employee</option>
-                {team.map((member) => (
-                  <option key={member._id} value={member._id}>{member.name}</option>
-                ))}
-              </select>
-              <input
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                type="number"
-                min="1"
-                placeholder="Interval days"
-                value={recurringForm.intervalDays}
-                onChange={(e) =>
-                  setRecurringForm({ ...recurringForm, intervalDays: Number(e.target.value) })
-                }
-              />
-              <input
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-                type="number"
-                min="1"
-                max="50"
-                placeholder="Occurrences"
-                value={recurringForm.occurrences}
-                onChange={(e) =>
-                  setRecurringForm({ ...recurringForm, occurrences: Number(e.target.value) })
-                }
-              />
+            <div className="mt-3 grid gap-3">
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Template</label>
+                <select
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  value={recurringForm.templateId}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, templateId: e.target.value })}
+                >
+                  <option value="">Select template</option>
+                  {templates.map((tpl) => (
+                    <option key={tpl._id} value={tpl._id}>{tpl.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Project</label>
+                <select
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  value={recurringForm.projectId}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, projectId: e.target.value })}
+                >
+                  <option value="">Select project</option>
+                  {projects.map((project) => (
+                    <option key={project._id} value={project._id}>{project.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-1">
+                <label className="text-xs uppercase tracking-wide text-slate-400">Assign to employee</label>
+                <select
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                  value={recurringForm.userId}
+                  onChange={(e) => setRecurringForm({ ...recurringForm, userId: e.target.value })}
+                >
+                  <option value="">Select employee</option>
+                  {team.map((member) => (
+                    <option key={member._id} value={member._id}>{member.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-wide text-slate-400">Interval days</label>
+                  <input
+                    className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                    type="number"
+                    min="1"
+                    placeholder="7"
+                    value={recurringForm.intervalDays}
+                    onChange={(e) =>
+                      setRecurringForm({ ...recurringForm, intervalDays: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[11px] text-slate-500">How often to repeat.</span>
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-wide text-slate-400">Occurrences</label>
+                  <input
+                    className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                    type="number"
+                    min="1"
+                    max="50"
+                    placeholder="5"
+                    value={recurringForm.occurrences}
+                    onChange={(e) =>
+                      setRecurringForm({ ...recurringForm, occurrences: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[11px] text-slate-500">Total tasks to create.</span>
+                </div>
+              </div>
               <button
                 className="btn-ghost"
                 onClick={async () => {
