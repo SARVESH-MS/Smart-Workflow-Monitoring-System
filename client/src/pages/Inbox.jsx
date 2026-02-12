@@ -2,8 +2,6 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../utils/AuthContext.jsx";
 import { listMyEmails, markMyEmailsRead } from "../api/emails.js";
-import NotificationList from "../components/NotificationList.jsx";
-import { markAllNotificationsRead } from "../api/notifications.js";
 
 const Inbox = () => {
   const [emails, setEmails] = useState([]);
@@ -14,7 +12,6 @@ const Inbox = () => {
   useEffect(() => {
     listMyEmails().then(setEmails);
     markMyEmailsRead();
-    markAllNotificationsRead();
   }, []);
 
   const basePath = user?.role === "manager" ? `/manager/${params.id}` : `/employee/${params.id}`;
@@ -46,13 +43,6 @@ const Inbox = () => {
             <div className="mt-2 text-xs text-slate-400">Template: {log.templateKey || "-"}</div>
           </div>
         ))}
-      </div>
-      <div className="mt-6">
-        <h3 className="text-lg font-semibold">In-app alerts for your tasks.</h3>
-        <p className="text-sm text-slate-400">Delay, completion, and assignment alerts appear here.</p>
-        <div className="mt-3">
-          <NotificationList />
-        </div>
       </div>
     </div>
   );

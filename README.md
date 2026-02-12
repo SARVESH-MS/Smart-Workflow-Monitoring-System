@@ -1,9 +1,9 @@
-# Smart Workflow Monitoring System
+﻿# Smart Workflow Monitoring System
 
-A full-stack workflow monitoring platform with role-based dashboards, real-time updates, time tracking, and delay detection.
+A full-stack workflow monitoring platform with role-based dashboards, real-time updates, time tracking, delay detection, and built-in team communication.
 
 ## About the Project
-Smart Workflow Monitoring System (SWMS) helps teams plan, assign, track, and deliver work with visibility across roles. It provides Admin, Manager, and Employee dashboards with live updates, time tracking, and alerts to reduce delays and improve delivery efficiency.
+Smart Workflow Monitoring System (SWMS) helps teams plan, assign, track, and deliver work with visibility across roles. It provides Admin, Manager, and Employee dashboards with live updates, time tracking, and proactive alerts to improve productivity and delivery predictability.
 
 ## Stack
 - Frontend: React + Vite + Tailwind CSS + Chart.js
@@ -21,10 +21,13 @@ Smart Workflow Monitoring System (SWMS) helps teams plan, assign, track, and del
 - Task templates + recurring tasks
 - Bulk task updates
 - Global search + saved filters
-- Capacity & availability tracking
+- Capacity and availability tracking
 - Performance scorecards
 - Notification templates (Email + Slack)
-- Email/SMS notifications + in-app email inbox
+- Separate in-app modules:
+  - `Emails` (in-app mail inbox)
+  - `Notifications` (in-app task alerts)
+- Team discussion with file/link sharing + unread counters
 - Reports export (CSV / PDF)
 - Audit log for key actions
 
@@ -40,28 +43,31 @@ Smart Workflow Monitoring System (SWMS) helps teams plan, assign, track, and del
 - PDF export: PDFKit
 
 ## Modules Overview
-- **Admin**: Project creation/management, analytics, notification templates, digest sender, email logs
-- **Manager**: Team overview, task assignment, Kanban, Gantt, templates/recurring, bulk updates
-- **Employee**: Task list with details, time tracking, completion, capacity/availability
+- **Admin**: Project management, analytics, notification templates, digest sender, email logs
+- **Manager**: Team overview, task assignment, Kanban, Gantt, templates/recurring, bulk updates, capacity/performance
+- **Employee**: Task list with details, timer controls, completion tracking, capacity view
 
 ## Project Structure
-- `client/` – React frontend
-- `server/` – Express API + MongoDB models + Socket.io
+- `client/` - React frontend
+- `server/` - Express API + MongoDB models + Socket.io
 
 ## Quick Start
 
-### 1) Backend
-
+### 1. Backend
 ```bash
 cd server
 cp .env.example .env
 npm install
-npm run seed  ### To reset the data base in MongoDB
+npm run seed
 npm run dev
 ```
 
-### 2) Frontend
+Optional seeded in-app mails for all existing users:
+```bash
+npm run seed:mails
+```
 
+### 2. Frontend
 ```bash
 cd client
 cp .env.example .env
@@ -69,32 +75,58 @@ npm install
 npm run dev
 ```
 
+### 3. Monorepo (root)
+```bash
+npm install
+npm run dev
+```
+
 ## Default Accounts (seeded)
 All passwords: `Password123!`
-- Admin: admin@swms.com
-- Manager Raju: raju@swms.com
-- Manager Leena: leena@swms.com
+- Admin: `admin@swms.com`
+- Manager Raju: `raju@swms.com`
+- Manager Leena: `leena@swms.com`
 - Raju Team (Employees):
-  - raju1@swms.com
-  - raju2@swms.com
-  - raju3@swms.com
-  - raju4@swms.com
-  - raju5@swms.com
-  - raju6@swms.com
-  - raju7@swms.com
-  - raju8@swms.com
-  - raju9@swms.com
-  - raju10@swms.com
+  - `raju1@swms.com`
+  - `raju2@swms.com`
+  - `raju3@swms.com`
+  - `raju4@swms.com`
+  - `raju5@swms.com`
+  - `raju6@swms.com`
+  - `raju7@swms.com`
+  - `raju8@swms.com`
+  - `raju9@swms.com`
+  - `raju10@swms.com`
 - Leena Team (Employees):
-  - leena1@swms.com
-  - leena2@swms.com
-  - leena3@swms.com
-  - leena4@swms.com
-  - leena5@swms.com
-  - leena6@swms.com
-  - leena7@swms.com
-  - leena8@swms.com
-  - leena9@swms.com
+  - `leena1@swms.com`
+  - `leena2@swms.com`
+  - `leena3@swms.com`
+  - `leena4@swms.com`
+  - `leena5@swms.com`
+  - `leena6@swms.com`
+  - `leena7@swms.com`
+  - `leena8@swms.com`
+  - `leena9@swms.com`
+
+## Environment Variables (server/.env)
+Required:
+- `PORT`
+- `MONGO_URI`
+- `JWT_SECRET`
+- `CLIENT_URL`
+
+Optional notifications:
+- `NOTIFY_ON_DELAY` (`true`/`false`)
+- `NOTIFY_ON_COMPLETE` (`true`/`false`)
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_PHONE_NUMBER`
+- `SLACK_WEBHOOK_URL`
 
 ## Deployment
 
@@ -106,26 +138,25 @@ All passwords: `Password123!`
 ### Backend (Railway)
 - Root directory: `server`
 - Start command: `npm start`
-- Env: `MONGO_URI`, `JWT_SECRET`, `CLIENT_URL`
- - Optional notifications: `SMTP_*`, `TWILIO_*`, `NOTIFY_ON_DELAY`
+- Core env: `MONGO_URI`, `JWT_SECRET`, `CLIENT_URL`
+- Optional notifications: `SMTP_*`, `TWILIO_*`, `SLACK_WEBHOOK_URL`, `NOTIFY_ON_DELAY`, `NOTIFY_ON_COMPLETE`
 
 ### MongoDB Atlas
 - Create a cluster and user
-- Set `MONGO_URI` in Railway
+- Set `MONGO_URI` in backend environment
 
 ## Notes
-- Real-time updates via Socket.io
-- Time tracking with start/stop timer per task
-- Delay detection runs on task updates and deadline checks
-- Email/SMS notifications configurable via `.env.notifications.example`
+- Real-time updates use Socket.io events.
+- Time tracking is timer-based per task (start/stop).
+- Delay detection runs during task updates and completion checks.
+- In-app inbox (`Emails`) and in-app alerts (`Notifications`) are separate views.
 
-### Task Templates & Recurring
-Interval days: 7 → create a new task every 7 days (weekly).
-Occurrences: 5 → create it 5 times total.
-So with today as Feb 9, 2026, it would create tasks on:
-
-Feb 9, 2026
-Feb 16, 2026
-Feb 23, 2026
-Mar 2, 2026
-Mar 9, 2026
+## Task Templates and Recurring (Example)
+- Interval days: `7` -> create a new task every 7 days (weekly)
+- Occurrences: `5` -> create it 5 times total
+- Example dates (if started on Feb 9, 2026):
+  - Feb 9, 2026
+  - Feb 16, 2026
+  - Feb 23, 2026
+  - Mar 2, 2026
+  - Mar 9, 2026

@@ -252,9 +252,17 @@ const ManagerDashboard = () => {
         <div className="flex items-center gap-2">
           <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/inbox`)}>
             Emails
-            {unreadEmails + unreadNotifications > 0 && (
+            {unreadEmails > 0 && (
               <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
-                {unreadEmails + unreadNotifications}
+                {unreadEmails}
+              </span>
+            )}
+          </button>
+          <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/notifications`)}>
+            Notifications
+            {unreadNotifications > 0 && (
+              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+                {unreadNotifications}
               </span>
             )}
           </button>

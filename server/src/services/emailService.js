@@ -10,7 +10,14 @@ export const getMailer = () => {
   const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
-    throw new Error("SMTP configuration missing");
+    const missing = [
+      !host ? "SMTP_HOST" : null,
+      !user ? "SMTP_USER" : null,
+      !pass ? "SMTP_PASS" : null
+    ]
+      .filter(Boolean)
+      .join(", ");
+    throw new Error(`SMTP configuration missing: ${missing}`);
   }
 
   transport = nodemailer.createTransport({

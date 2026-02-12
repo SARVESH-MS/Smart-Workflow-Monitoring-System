@@ -6,6 +6,7 @@ import connectDB from "../config/db.js";
 import User from "../models/User.js";
 import Project from "../models/Project.js";
 import Task from "../models/Task.js";
+import EmailLog from "../models/EmailLog.js";
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ const seed = async () => {
   await User.deleteMany({});
   await Project.deleteMany({});
   await Task.deleteMany({});
+  await EmailLog.deleteMany({});
 
   await User.create({
     name: "Admin",
@@ -146,6 +148,31 @@ const seed = async () => {
   });
 
   await Task.insertMany(tasks);
+
+  const allUsers = await User.find({}).select("_id name email role");
+  const mailLogs = allUsers.flatMap((u) => [
+    {
+      to: u.email,
+      subject: `Welcome to SWMS, ${u.name}`,
+      body: `<p>Hello ${u.name}, your ${u.role} account is active in Smart Workflow Monitoring System.</p>`,
+      templateKey: "seed.welcome",
+      sentByRole: "system",
+      meta: { userId: u._id, seeded: true },
+      deliveryStatus: "sent",
+      read: false
+    },
+    {
+      to: u.email,
+      subject: "Daily Workflow Summary Available",
+      body: `<p>Hi ${u.name}, check your dashboard for task status, delays, and updates.</p>`,
+      templateKey: "seed.daily.summary",
+      sentByRole: "system",
+      meta: { userId: u._id, seeded: true },
+      deliveryStatus: "sent",
+      read: false
+    }
+  ]);
+  await EmailLog.insertMany(mailLogs);
 
   console.log("Seed complete");
   await mongoose.disconnect();

@@ -10,6 +10,7 @@ import ManagerDashboard from "../pages/ManagerDashboard.jsx";
 import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
 import Forum from "../pages/Forum.jsx";
 import Inbox from "../pages/Inbox.jsx";
+import Notifications from "../pages/Notifications.jsx";
 import NotFound from "../pages/NotFound.jsx";
 import ProtectedRoute from "../utils/ProtectedRoute.jsx";
 
@@ -41,7 +42,8 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <ManagerDashboard /> },
       { path: "forum", element: <Forum /> },
-      { path: "inbox", element: <Inbox /> }
+      { path: "inbox", element: <Inbox /> },
+      { path: "notifications", element: <Notifications /> }
     ]
   },
   {
@@ -54,7 +56,8 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <EmployeeDashboard /> },
       { path: "forum", element: <Forum /> },
-      { path: "inbox", element: <Inbox /> }
+      { path: "inbox", element: <Inbox /> },
+      { path: "notifications", element: <Notifications /> }
     ]
   },
   { path: "*", element: <NotFound /> }

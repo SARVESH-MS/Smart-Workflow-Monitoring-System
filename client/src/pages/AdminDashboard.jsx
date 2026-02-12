@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { listProjects, createProject } from "../api/projects.js";
 import { summary } from "../api/analytics.js";
 import StatCard from "../components/StatCard.jsx";
@@ -219,7 +219,7 @@ const AdminDashboard = () => {
             <h3 className="text-lg font-semibold">Notification Templates</h3>
             <p className="text-sm text-slate-400">Edit email/Slack templates.</p>
           </div>
-          <span className="text-xl text-slate-400">{templatesOpen ? "▾" : "▸"}</span>
+          <span className="text-xl text-slate-400">{templatesOpen ? "v" : ">"}</span>
         </button>
         {templatesOpen && (
           <div className="mt-4 grid gap-4">
@@ -331,3 +331,4 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+

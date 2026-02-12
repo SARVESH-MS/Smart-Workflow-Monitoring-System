@@ -29,9 +29,48 @@ const getTemplate = async (key, fallback) => {
   return tpl || fallback;
 };
 
+const uniqueRecipients = (...emails) => [...new Set(emails.filter(Boolean))];
+
+const createInAppInboxLogs = async ({ recipients, subject, html, templateKey, meta }) => {
+  if (!recipients.length) return new Map();
+  const created = await EmailLog.insertMany(
+    recipients.map((to) => ({
+      to,
+      subject,
+      body: html,
+      templateKey,
+      sentByRole: "system",
+      meta,
+      deliveryStatus: "sent"
+    }))
+  );
+  return new Map(created.map((doc) => [doc.to, doc._id]));
+};
+
+const sendExternalEmails = async ({ recipients, subject, html, logIdsByRecipient }) => {
+  await Promise.all(
+    recipients.map(async (to) => {
+      try {
+        await sendEmail({ to, subject, html });
+      } catch (err) {
+        const errorMessage = err?.message || "Email send failed";
+        console.error(`[notify] Email send failed to ${to}: ${errorMessage}`);
+        const logId = logIdsByRecipient.get(to);
+        if (logId) {
+          await EmailLog.findByIdAndUpdate(logId, {
+            $set: {
+              deliveryStatus: "failed",
+              error: errorMessage,
+              "meta.failed": true
+            }
+          }).catch(() => null);
+        }
+      }
+    })
+  );
+};
+
 export const notifyDelay = async ({ user, manager, task, project }) => {
-  if (!shouldNotifyDelay()) return;
-  if (!userPref(user, "emailDelay", true) && !userPref(manager, "emailDelay", true)) return;
   const fallback = {
     subject: `Task delayed: ${task.title}`,
     body: `
@@ -54,26 +93,14 @@ export const notifyDelay = async ({ user, manager, task, project }) => {
     manager
   });
 
-  const recipients = [
-    userPref(manager, "emailDelay", true) ? manager?.email : null,
-    userPref(user, "emailDelay", true) ? user?.email : null
-  ].filter(Boolean);
-  await Promise.all(
-    recipients.map((to) =>
-      sendEmail({ to, subject, html })
-        .then(() =>
-          EmailLog.create({
-            to,
-            subject,
-            body: html,
-            templateKey: "task.delay.email",
-            sentByRole: "system",
-            meta: { projectId: project?._id, taskId: task?._id }
-          })
-        )
-        .catch(() => null)
-    )
-  );
+  const allRecipients = uniqueRecipients(manager?.email, user?.email);
+  const logIdsByRecipient = await createInAppInboxLogs({
+    recipients: allRecipients,
+    subject,
+    html,
+    templateKey: "task.delay.email",
+    meta: { projectId: project?._id, taskId: task?._id }
+  });
 
   await Promise.all(
     [user, manager]
@@ -87,14 +114,19 @@ export const notifyDelay = async ({ user, manager, task, project }) => {
         }).catch(() => null)
       )
   );
+  const externalRecipients = uniqueRecipients(
+    userPref(manager, "emailDelay", true) && shouldNotifyDelay() ? manager?.email : null,
+    userPref(user, "emailDelay", true) && shouldNotifyDelay() ? user?.email : null
+  );
+  await sendExternalEmails({ recipients: externalRecipients, subject, html, logIdsByRecipient });
+
+  if (!shouldNotifyDelay()) return;
   const slackTpl = await getTemplate("task.delay.slack", { body: "Delay: {{task.title}} ({{project.name}})" });
   const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });
   await sendSlack({ text: slackText }).catch(() => null);
 };
 
 export const notifyComplete = async ({ user, manager, task, project }) => {
-  if (!shouldNotifyComplete()) return;
-  if (!userPref(user, "emailComplete", false) && !userPref(manager, "emailComplete", false)) return;
   const fallback = {
     subject: `Task completed: ${task.title}`,
     body: `
@@ -111,26 +143,14 @@ export const notifyComplete = async ({ user, manager, task, project }) => {
   const subject = renderTemplate(template.subject || fallback.subject, { task, project, user, manager });
   const html = renderTemplate(template.body || fallback.body, { task, project, user, manager });
 
-  const recipients = [
-    userPref(manager, "emailComplete", false) ? manager?.email : null,
-    userPref(user, "emailComplete", false) ? user?.email : null
-  ].filter(Boolean);
-  await Promise.all(
-    recipients.map((to) =>
-      sendEmail({ to, subject, html })
-        .then(() =>
-          EmailLog.create({
-            to,
-            subject,
-            body: html,
-            templateKey: "task.complete.email",
-            sentByRole: "system",
-            meta: { projectId: project?._id, taskId: task?._id }
-          })
-        )
-        .catch(() => null)
-    )
-  );
+  const allRecipients = uniqueRecipients(manager?.email, user?.email);
+  const logIdsByRecipient = await createInAppInboxLogs({
+    recipients: allRecipients,
+    subject,
+    html,
+    templateKey: "task.complete.email",
+    meta: { projectId: project?._id, taskId: task?._id }
+  });
 
   await Promise.all(
     [user, manager]
@@ -144,6 +164,13 @@ export const notifyComplete = async ({ user, manager, task, project }) => {
         }).catch(() => null)
       )
   );
+  const externalRecipients = uniqueRecipients(
+    userPref(manager, "emailComplete", false) && shouldNotifyComplete() ? manager?.email : null,
+    userPref(user, "emailComplete", false) && shouldNotifyComplete() ? user?.email : null
+  );
+  await sendExternalEmails({ recipients: externalRecipients, subject, html, logIdsByRecipient });
+
+  if (!shouldNotifyComplete()) return;
   const slackTpl = await getTemplate("task.complete.slack", { body: "Complete: {{task.title}} ({{project.name}})" });
   const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });
   await sendSlack({ text: slackText }).catch(() => null);
@@ -171,23 +198,14 @@ export const notifyAssigned = async ({ user, manager, task, project }) => {
     manager
   });
 
-  const recipients = [manager?.email, user?.email].filter(Boolean);
-  await Promise.all(
-    recipients.map((to) =>
-      sendEmail({ to, subject, html })
-        .then(() =>
-          EmailLog.create({
-            to,
-            subject,
-            body: html,
-            templateKey: "task.assigned.email",
-            sentByRole: "system",
-            meta: { projectId: project?._id, taskId: task?._id }
-          })
-        )
-        .catch(() => null)
-    )
-  );
+  const allRecipients = uniqueRecipients(manager?.email, user?.email);
+  const logIdsByRecipient = await createInAppInboxLogs({
+    recipients: allRecipients,
+    subject,
+    html,
+    templateKey: "task.assigned.email",
+    meta: { projectId: project?._id, taskId: task?._id }
+  });
 
   await Promise.all(
     [user, manager]
@@ -201,6 +219,13 @@ export const notifyAssigned = async ({ user, manager, task, project }) => {
         }).catch(() => null)
       )
   );
+
+  await sendExternalEmails({
+    recipients: allRecipients,
+    subject,
+    html,
+    logIdsByRecipient
+  });
 
   const slackTpl = await getTemplate("task.assigned.slack", { body: "Assigned: {{task.title}} ({{project.name}})" });
   const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });

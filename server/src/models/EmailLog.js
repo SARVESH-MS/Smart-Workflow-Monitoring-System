@@ -9,7 +9,9 @@ const EmailLogSchema = new mongoose.Schema(
     sentByRole: { type: String, default: "system" },
     sentById: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     meta: { type: Object },
-    read: { type: Boolean, default: false }
+    read: { type: Boolean, default: false },
+    deliveryStatus: { type: String, enum: ["sent", "failed"], default: "sent" },
+    error: { type: String }
   },
   { timestamps: true }
 );

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "seed": "node src/seed/seed.js"
+    "seed": "node src/seed/seed.js",
+    "seed:mails": "node src/seed/seedInboxMails.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
