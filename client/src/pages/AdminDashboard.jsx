@@ -8,7 +8,14 @@ import { formatDate } from "../utils/date.js";
 import CompletionChart from "../charts/CompletionChart.jsx";
 import DelayChart from "../charts/DelayChart.jsx";
 import { createSocket } from "../utils/socket.js";
-import { listUsers, updateUserPreferences } from "../api/users.js";
+import {
+  listUsers,
+  updateUserPreferences,
+  listRegistrationRequests,
+  processRegistrationRequest,
+  listLoginActivity,
+  listSessionMonitor
+} from "../api/users.js";
 import { listTemplates, updateTemplate } from "../api/templates.js";
 import { listEmailLogs } from "../api/emails.js";
 import GlobalSearch from "../components/GlobalSearch.jsx";
@@ -19,9 +26,15 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [managers, setManagers] = useState([]);
+  const [registrationRequests, setRegistrationRequests] = useState([]);
+  const [loginActivity, setLoginActivity] = useState([]);
+  const [sessionMonitor, setSessionMonitor] = useState([]);
+  const [requestManagerMap, setRequestManagerMap] = useState({});
   const [templates, setTemplates] = useState({});
   const [emailsOpen, setEmailsOpen] = useState(false);
   const [emailLogs, setEmailLogs] = useState([]);
+  const [loginActivityOpen, setLoginActivityOpen] = useState(false);
+  const [sessionMonitorOpen, setSessionMonitorOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -32,18 +45,29 @@ const AdminDashboard = () => {
     workflow: ["Planning", "Design", "Development", "Testing", "Done"]
   });
 
+  const loadSessionData = async () => {
+    const sessionData = await listSessionMonitor();
+    setSessionMonitor(sessionData);
+  };
+
   const load = async () => {
-    const [projectsData, statsData, usersData, managerData, templateData] = await Promise.all([
+    const [projectsData, statsData, usersData, managerData, templateData, requestData, activityData, sessionData] = await Promise.all([
       listProjects(),
       summary(),
       listUsers(),
       listUsers("manager"),
-      listTemplates()
+      listTemplates(),
+      listRegistrationRequests("pending"),
+      listLoginActivity(300),
+      listSessionMonitor()
     ]);
     setProjects(projectsData);
     setStats(statsData);
     setUsers(usersData);
     setManagers(managerData);
+    setRegistrationRequests(requestData);
+    setLoginActivity(activityData);
+    setSessionMonitor(sessionData);
     const map = {};
     templateData.forEach((t) => {
       map[t.key] = t;
@@ -59,7 +83,13 @@ const AdminDashboard = () => {
     socket.on("project:created", load);
     socket.on("project:updated", load);
     socket.on("task:updated", load);
+    socket.on("presence:update", loadSessionData);
     return () => socket.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(loadSessionData, 10000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -81,6 +111,7 @@ const AdminDashboard = () => {
     ...project,
     deadline: formatDate(project.deadline)
   }));
+  const onlineSessions = sessionMonitor.filter((item) => item.isOnline);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -210,6 +241,212 @@ const AdminDashboard = () => {
         <DigestSender />
       </div>
 
+      <div id="authorization" className="card scroll-mt-6">
+        <h3 className="text-lg font-semibold">New User Authorization</h3>
+        <p className="text-sm text-slate-400">Approve or reject pending registration requests.</p>
+        <div className="mt-4 overflow-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-400">
+              <tr>
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Email</th>
+                <th className="py-2 pr-4">Role</th>
+                <th className="py-2 pr-4">Team Role</th>
+                <th className="py-2 pr-4">Assign Manager</th>
+                <th className="py-2 pr-4">Requested</th>
+                <th className="py-2 pr-4">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {registrationRequests.length === 0 && (
+                <tr>
+                  <td className="py-3 text-slate-400" colSpan={7}>No pending requests.</td>
+                </tr>
+              )}
+              {registrationRequests.map((req) => (
+                <tr key={req._id} className="border-t border-slate-800">
+                  <td className="py-2 pr-4 text-slate-200">{req.name}</td>
+                  <td className="py-2 pr-4 text-slate-300">{req.email}</td>
+                  <td className="py-2 pr-4 text-slate-300">{req.role}</td>
+                  <td className="py-2 pr-4 text-slate-300">{req.teamRole}</td>
+                  <td className="py-2 pr-4">
+                    {req.role === "employee" ? (
+                      <select
+                        className="rounded-lg bg-slate-900 px-2 py-1 text-xs"
+                        value={requestManagerMap[req._id] || ""}
+                        onChange={(e) =>
+                          setRequestManagerMap((prev) => ({ ...prev, [req._id]: e.target.value }))
+                        }
+                      >
+                        <option value="">Select manager</option>
+                        {managers.map((mgr) => (
+                          <option key={mgr._id} value={mgr._id}>
+                            {mgr.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs text-slate-500">N/A</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-xs text-slate-400">{new Date(req.createdAt).toLocaleString()}</td>
+                  <td className="py-2 pr-4">
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-ghost px-3 py-1 text-xs disabled:opacity-50"
+                        disabled={req.role === "employee" && !requestManagerMap[req._id]}
+                        onClick={async () => {
+                          await processRegistrationRequest(req._id, {
+                            action: "approve",
+                            managerId: requestManagerMap[req._id]
+                          });
+                          setRegistrationRequests((prev) => prev.filter((x) => x._id !== req._id));
+                          load();
+                        }}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="btn-ghost px-3 py-1 text-xs"
+                        onClick={async () => {
+                          const reason = prompt("Reason for rejection (optional):") || "";
+                          await processRegistrationRequest(req._id, { action: "reject", reason });
+                          setRegistrationRequests((prev) => prev.filter((x) => x._id !== req._id));
+                        }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="session-monitor" className="card scroll-mt-6">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setSessionMonitorOpen((prev) => !prev)}
+        >
+          <div>
+            <h3 className="text-lg font-semibold">Session Monitor</h3>
+            <p className="text-sm text-slate-400">Track who is online, login time, and last seen.</p>
+          </div>
+          <span className="text-xl text-slate-400">{sessionMonitorOpen ? "v" : ">"}</span>
+        </button>
+        {sessionMonitorOpen && (
+          <div className="mt-4 max-h-80 overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase text-slate-400">
+                <tr>
+                  <th className="py-2 pr-4">User</th>
+                  <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Status</th>
+                  <th className="py-2 pr-4">Logged In</th>
+                  <th className="py-2 pr-4">Last Seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {onlineSessions.length === 0 && (
+                  <tr>
+                    <td className="py-3 text-slate-400" colSpan={5}>No users are online right now.</td>
+                  </tr>
+                )}
+                {onlineSessions.map((item) => (
+                  <tr key={item.userId} className="border-t border-slate-800">
+                    <td className="py-2 pr-4">
+                      <div className="text-slate-200">{item.name}</div>
+                      <div className="text-xs text-slate-500">{item.email}</div>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-300 uppercase">{item.role}</td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs ${
+                          item.isOnline
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-slate-700 text-slate-300"
+                        }`}
+                      >
+                        {item.isOnline ? "Online" : "Offline"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-300">
+                      {item.loggedInAt ? new Date(item.loggedInAt).toLocaleString() : "-"}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-400">
+                      {item.lastSeenAt ? new Date(item.lastSeenAt).toLocaleString() : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div id="login-activity" className="card scroll-mt-6">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setLoginActivityOpen((prev) => !prev)}
+        >
+          <div>
+            <h3 className="text-lg font-semibold">Manager & Employee Login Activity</h3>
+            <p className="text-sm text-slate-400">Tracks login/logout time with role and device details.</p>
+          </div>
+          <span className="text-xl text-slate-400">{loginActivityOpen ? "v" : ">"}</span>
+        </button>
+        {loginActivityOpen && (
+          <div className="mt-4 max-h-80 overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase text-slate-400">
+                <tr>
+                  <th className="py-2 pr-4">User</th>
+                  <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Action</th>
+                  <th className="py-2 pr-4">Time</th>
+                  <th className="py-2 pr-4">IP</th>
+                  <th className="py-2 pr-4">Device</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loginActivity.length === 0 && (
+                  <tr>
+                    <td className="py-3 text-slate-400" colSpan={6}>No login activity yet.</td>
+                  </tr>
+                )}
+                {loginActivity.map((item) => (
+                  <tr key={item.id} className="border-t border-slate-800">
+                    <td className="py-2 pr-4">
+                      <div className="text-slate-200">{item.name}</div>
+                      <div className="text-xs text-slate-500">{item.email}</div>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-300 uppercase">{item.role}</td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs ${
+                          item.action === "login"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-amber-500/15 text-amber-300"
+                        }`}
+                      >
+                        {item.action}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-300">{new Date(item.at).toLocaleString()}</td>
+                    <td className="py-2 pr-4 text-slate-400">{item.ip}</td>
+                    <td className="max-w-[360px] truncate py-2 pr-4 text-xs text-slate-500" title={item.userAgent}>
+                      {item.deviceName}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div id="templates" className="card scroll-mt-6">
         <button
           className="flex w-full items-center justify-between text-left"
@@ -314,7 +551,7 @@ const AdminDashboard = () => {
       </Modal>
 
       <Modal open={emailsOpen} title="Sent Emails" onClose={() => setEmailsOpen(false)}>
-        <div className="grid gap-3 text-sm">
+        <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1 text-sm">
           {emailLogs.length === 0 && <div className="text-slate-400">No emails logged yet.</div>}
           {emailLogs.map((log) => (
             <div key={log._id} className="rounded-xl border border-slate-800 p-3">

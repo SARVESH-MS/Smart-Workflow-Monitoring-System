@@ -300,10 +300,33 @@ const ManagerDashboard = () => {
             ))}
           </div>
         </div>
-        <div id="alerts" className="card scroll-mt-6">
-          <h3 className="text-lg font-semibold">Real-time Alerts</h3>
-          <p className="text-sm text-slate-400">Delays and bottlenecks appear here.</p>
-          <div className="mt-4 text-sm text-amber-300">Live monitoring enabled.</div>
+        <div className="card">
+          <h3 className="text-lg font-semibold">Team Snapshot</h3>
+          <p className="text-sm text-slate-400">Quick status of team workflow health.</p>
+          <div className="mt-4 grid gap-2 text-sm text-slate-300">
+            <div>Team members: {team.length}</div>
+            <div>Total tasks: {tasks.length}</div>
+            <div>Time spent: {formatDurationHours(totalTimeSpent)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="reports" className="card scroll-mt-6">
+        <h3 className="text-lg font-semibold">Reports</h3>
+        <p className="text-sm text-slate-400">Export current workflow tasks for sharing and reviews.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            className="btn-ghost"
+            onClick={async () => triggerDownload(await downloadTasksCsv(), "tasks-report.csv")}
+          >
+            Export CSV
+          </button>
+          <button
+            className="btn-ghost"
+            onClick={async () => triggerDownload(await downloadTasksPdf(), "tasks-report.pdf")}
+          >
+            Export PDF
+          </button>
         </div>
       </div>
 
@@ -381,8 +404,6 @@ const ManagerDashboard = () => {
         </div>
         <Table columns={taskColumns} data={taskRows} />
       </div>
-
-      <div id="reports" className="scroll-mt-6" />
 
       <div id="kanban" className="card scroll-mt-6">
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 import AuthLayout from "../layouts/AuthLayout.jsx";
 import AdminLayout from "../layouts/AdminLayout.jsx";
 import ManagerLayout from "../layouts/ManagerLayout.jsx";
@@ -18,7 +18,8 @@ const router = createBrowserRouter([
   {
     element: <AuthLayout />,
     children: [
-      { path: "/", element: <Login /> },
+      { path: "/", element: <Navigate to="/home" replace /> },
+      { path: "/home", element: null },
       { path: "/login", element: <Login /> },
       { path: "/register", element: <Register /> }
     ]

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { getToken, getUser, setAuth, clearAuth } from "./auth.js";
-import { me } from "../api/auth.js";
+import { me, logout as logoutApi } from "../api/auth.js";
 
 const AuthContext = createContext(null);
 
@@ -27,6 +27,19 @@ export const AuthProvider = ({ children }) => {
     init();
   }, [token]);
 
+  useEffect(() => {
+    const handleUserUpdated = (event) => {
+      const nextUser = event?.detail;
+      if (!nextUser) return;
+      setUser(nextUser);
+      if (token) {
+        setAuth(token, nextUser);
+      }
+    };
+    window.addEventListener("swms:user-updated", handleUserUpdated);
+    return () => window.removeEventListener("swms:user-updated", handleUserUpdated);
+  }, [token]);
+
   const value = useMemo(
     () => ({
       user,
@@ -37,7 +50,20 @@ export const AuthProvider = ({ children }) => {
         setUser(userValue);
         setAuth(tokenValue, userValue);
       },
-      logout: () => {
+      updateCurrentUser: (nextUser) => {
+        setUser(nextUser);
+        if (token) {
+          setAuth(token, nextUser);
+        }
+      },
+      logout: async () => {
+        if (token) {
+          try {
+            await logoutApi();
+          } catch {
+            // Session is client-side JWT; always clear local auth even if API fails.
+          }
+        }
         clearAuth();
         setUser(null);
         setToken(null);

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const UserSchema = new mongoose.Schema(
   {
+    swmsId: { type: String, unique: true, index: true, sparse: true },
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
@@ -11,6 +12,7 @@ const UserSchema = new mongoose.Schema(
       required: true
     },
     phone: { type: String },
+    avatarUrl: { type: String, default: "" },
     managerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     teamRole: {
       type: String,

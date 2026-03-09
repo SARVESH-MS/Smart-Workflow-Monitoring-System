@@ -1,16 +1,18 @@
 export const setAuth = (token, user) => {
-  localStorage.setItem("swms_token", token);
-  localStorage.setItem("swms_user", JSON.stringify(user));
+  sessionStorage.setItem("swms_token", token);
+  sessionStorage.setItem("swms_user", JSON.stringify(user));
 };
 
 export const clearAuth = () => {
+  sessionStorage.removeItem("swms_token");
+  sessionStorage.removeItem("swms_user");
   localStorage.removeItem("swms_token");
   localStorage.removeItem("swms_user");
 };
 
-export const getToken = () => localStorage.getItem("swms_token");
+export const getToken = () => sessionStorage.getItem("swms_token");
 
 export const getUser = () => {
-  const raw = localStorage.getItem("swms_user");
+  const raw = sessionStorage.getItem("swms_user");
   return raw ? JSON.parse(raw) : null;
 };

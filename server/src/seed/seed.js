@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import Project from "../models/Project.js";
 import Task from "../models/Task.js";
 import EmailLog from "../models/EmailLog.js";
+import RegistrationRequest from "../models/RegistrationRequest.js";
 
 dotenv.config();
 
@@ -18,10 +19,12 @@ const seed = async () => {
   await Project.deleteMany({});
   await Task.deleteMany({});
   await EmailLog.deleteMany({});
+  await RegistrationRequest.deleteMany({});
 
   await User.create({
+    swmsId: "7376231SWMS001",
     name: "Admin",
-    email: "admin@swms.com",
+    email: "sarvesh.cs23@bitsathy.ac.in",
     password: passwordHash,
     role: "admin",
     phone: "+10000000001",
@@ -30,8 +33,9 @@ const seed = async () => {
   });
 
   const managerRaju = await User.create({
+    swmsId: "7376231SWM101",
     name: "Raju",
-    email: "raju@swms.com",
+    email: "ms.sarveshsarvesh.2006@gmail.com",
     password: passwordHash,
     role: "manager",
     phone: "+10000000002",
@@ -40,8 +44,9 @@ const seed = async () => {
   });
 
   const managerLeena = await User.create({
+    swmsId: "7376231SWMS102",
     name: "Leena",
-    email: "leena@swms.com",
+    email: "ms.sarveshyawana@gmail.com",
     password: passwordHash,
     role: "manager",
     phone: "+10000000003",
@@ -77,8 +82,14 @@ const seed = async () => {
   const rajuTeam = await Promise.all(
     rajuTeamRoles.map((roleName, idx) =>
       User.create({
-        name: `RajuTeam${idx + 1}`,
-        email: `raju${idx + 1}@swms.com`,
+        swmsId: `7376231SWMS${String(300 + idx).padStart(3, "0")}`,
+        name: idx === 1 ? "Sarvesh MS" : `RajuTeam${idx + 1}`,
+        email:
+          idx === 0
+            ? "sarveshsarvesh2006at@gmail.com"
+            : idx === 1
+              ? "sarvesh.at.2306@gmail.com"
+              : `raju${idx + 1}@swms.com`,
         password: passwordHash,
         role: "employee",
         phone: `+100000001${idx}`,
@@ -92,6 +103,7 @@ const seed = async () => {
   const leenaTeam = await Promise.all(
     leenaTeamRoles.map((roleName, idx) =>
       User.create({
+        swmsId: `7376231SWMS${String(310 + idx).padStart(3, "0")}`,
         name: `LeenaTeam${idx + 1}`,
         email: `leena${idx + 1}@swms.com`,
         password: passwordHash,

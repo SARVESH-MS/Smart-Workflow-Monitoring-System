@@ -53,42 +53,29 @@ Smart Workflow Monitoring System (SWMS) helps teams plan, assign, track, and del
 
 ## Quick Start
 
-### 1. Backend
+### Run Commands (Terminal)
+### Backend
 ```bash
 cd server
-cp .env.example .env
 npm install
-npm run seed
 npm run dev
 ```
 
-Optional seeded in-app mails for all existing users:
-```bash
-npm run seed:mails
-```
-
-### 2. Frontend
+### Frontend
 ```bash
 cd client
-cp .env.example .env
-npm install
-npm run dev
-```
-
-### 3. Monorepo (root)
-```bash
 npm install
 npm run dev
 ```
 
 ## Default Accounts (seeded)
 All passwords: `Password123!`
-- Admin: `admin@swms.com`
-- Manager Raju: `raju@swms.com`
-- Manager Leena: `leena@swms.com`
+- Admin: `sarvesh.cs23@bitsathy.ac.in`
+- Manager Raju: `ms.sarveshsarvesh.2006@gmail.com`
+- Manager Leena: `ms.sarveshyawana@gmail.com`
 - Raju Team (Employees):
-  - `raju1@swms.com`
-  - `raju2@swms.com`
+  - `sarveshsarvesh2006at@gmail.com` (RajuTeam1)
+  - `sarvesh.at.2306@gmail.com` (Sarvesh MS)
   - `raju3@swms.com`
   - `raju4@swms.com`
   - `raju5@swms.com`
@@ -160,3 +147,8 @@ Optional notifications:
   - Feb 23, 2026
   - Mar 2, 2026
   - Mar 9, 2026
+
+
+
+
+client/src/layouts/AuthLayout.jsx
