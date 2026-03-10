@@ -22,6 +22,10 @@ const Forum = () => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
+  const useLightChatFrames = room?.name
+    ? room.name.toLowerCase().includes("team discussion")
+    : false;
+
   const load = async () => {
     const roomData = await getMyRoom();
     setRoom(roomData);
@@ -100,7 +104,7 @@ const Forum = () => {
   };
 
   return (
-    <div className="card">
+    <div className={useLightChatFrames ? "card forum-light" : "card"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -135,15 +139,15 @@ const Forum = () => {
 
       <div className="mt-6 grid gap-3 max-h-[420px] overflow-auto">
         {messages.map((msg) => (
-          <div key={msg._id} className="glass rounded-xl p-3">
+          <div key={msg._id} className="forum-message glass rounded-xl p-3">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-slate-300">
+              <div className="forum-message-meta text-sm text-slate-300">
                 <span className="font-semibold">{msg.userId?.name || "User"}</span>
                 <span className="ml-2 text-xs text-slate-500">{msg.userId?.role}</span>
               </div>
               {String(msg.userId?._id) === String(user?.id) && null}
             </div>
-            <div className="mt-2 text-sm text-slate-200 whitespace-pre-wrap">
+            <div className="forum-message-body mt-2 text-sm text-slate-200 whitespace-pre-wrap">
               {linkify(msg.text)}
             </div>
             {msg.attachments?.length > 0 && (
@@ -152,7 +156,7 @@ const Forum = () => {
                   <a
                     key={fileItem.url}
                     href={`${import.meta.env.VITE_API_URL || "http://localhost:5000"}${fileItem.url}`}
-                    className="text-xs text-blue-300 underline"
+                    className="forum-message-link text-xs text-blue-300 underline"
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -161,7 +165,7 @@ const Forum = () => {
                 ))}
               </div>
             )}
-            {msg.editedAt && <div className="mt-2 text-xs text-slate-500">Edited</div>}
+            {msg.editedAt && <div className="forum-message-edited mt-2 text-xs text-slate-500">Edited</div>}
           </div>
         ))}
       </div>

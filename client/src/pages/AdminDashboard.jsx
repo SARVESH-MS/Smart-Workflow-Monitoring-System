@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { listProjects, createProject } from "../api/projects.js";
+import { listProjects, createProject, updateProject } from "../api/projects.js";
 import { summary } from "../api/analytics.js";
 import StatCard from "../components/StatCard.jsx";
 import Table from "../components/Table.jsx";
@@ -102,6 +102,7 @@ const AdminDashboard = () => {
       { key: "name", label: "Project" },
       { key: "description", label: "Description" },
       { key: "deadline", label: "Deadline" },
+      { key: "manager", label: "Manager" },
       { key: "status", label: "Status" }
     ],
     []
@@ -109,7 +110,25 @@ const AdminDashboard = () => {
 
   const rows = projects.map((project) => ({
     ...project,
-    deadline: formatDate(project.deadline)
+    deadline: formatDate(project.deadline),
+    manager: (
+      <select
+        className="rounded-lg bg-slate-900 px-2 py-1 text-xs"
+        value={project.managerId || ""}
+        onChange={async (e) => {
+          const managerId = e.target.value || null;
+          const updated = await updateProject(project._id, { managerId });
+          setProjects((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
+        }}
+      >
+        <option value="">Unassigned</option>
+        {managers.map((mgr) => (
+          <option key={mgr._id} value={mgr._id}>
+            {mgr.name}
+          </option>
+        ))}
+      </select>
+    )
   }));
   const onlineSessions = sessionMonitor.filter((item) => item.isOnline);
 

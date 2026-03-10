@@ -124,7 +124,7 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
   };
 
   return (
-    <aside className="sticky top-0 h-screen overflow-hidden p-6 border-r border-slate-800 bg-slate-950/60">
+    <aside className="sidebar-shell sticky top-0 h-screen overflow-hidden p-6 border-r border-slate-800 bg-slate-950/60">
       <div className="flex items-start justify-between">
         <div className="flex flex-col items-start gap-2">
           <div className="text-lg font-semibold">{title}</div>

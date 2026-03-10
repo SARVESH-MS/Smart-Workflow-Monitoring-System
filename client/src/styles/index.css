@@ -29,8 +29,43 @@ body::-webkit-scrollbar {
   backdrop-filter: blur(14px);
 }
 
+.dashboard-theme-light .forum-light .forum-message {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+.dashboard-theme-light .forum-light .forum-message-meta {
+  color: #334155 !important;
+}
+
+.dashboard-theme-light .forum-light .forum-message-body {
+  color: #1f2937 !important;
+}
+
+.dashboard-theme-light .forum-light .forum-message-link {
+  color: #2563eb !important;
+}
+
+.dashboard-theme-light .forum-light .forum-message-edited {
+  color: #64748b !important;
+}
+
 .card {
   @apply glass rounded-2xl p-5 shadow-xl;
+}
+
+.sidebar-shell .card {
+  box-shadow: none;
+}
+
+.dashboard-theme-light .sidebar-shell .card {
+  background: transparent !important;
+  border-color: #d1d9e6 !important;
+}
+
+.dashboard-theme-light .sidebar-shell {
+  background: #eef2f7 !important;
 }
 
 .btn {
