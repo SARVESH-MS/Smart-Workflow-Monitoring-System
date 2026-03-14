@@ -42,6 +42,12 @@ const signToken = (user) => {
   );
 };
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const findUserByEmail = (email) =>
+  User.findOne({ email: new RegExp(`^${escapeRegExp(email)}$`, "i") });
+const findRequestByEmail = (email) =>
+  RegistrationRequest.findOne({ email: new RegExp(`^${escapeRegExp(email)}$`, "i") }).lean();
+
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const warmGoogleCerts = () => {
@@ -134,11 +140,18 @@ export const googleAuth = async (req, res) => {
   const name = googleUser.name || email.split("@")[0];
 
   if (payload.mode === "login") {
-    const user = await User.findOne({ email })
+    const user = await findUserByEmail(email)
       .select("_id swmsId name email role phone avatarUrl managerId teamRole notificationPrefs")
       .lean();
     const afterLookup = timingEnabled ? Date.now() : 0;
     if (!user) {
+      const pending = await findRequestByEmail(email);
+      if (pending?.status === "pending") {
+        return res.status(403).json({ message: "Your account is pending admin approval." });
+      }
+      if (pending?.status === "rejected") {
+        return res.status(403).json({ message: "Your account request was rejected." });
+      }
       return res.status(401).json({ message: "No account found. Please sign up first." });
     }
     if (payload.role && user.role !== payload.role) {
@@ -222,8 +235,15 @@ export const googleAuth = async (req, res) => {
 
 export const login = async (req, res) => {
   const payload = loginSchema.parse(req.body);
-  const user = await User.findOne({ email: payload.email });
+  const user = await findUserByEmail(payload.email);
   if (!user) {
+    const pending = await findRequestByEmail(payload.email);
+    if (pending?.status === "pending") {
+      return res.status(403).json({ message: "Your account is pending admin approval." });
+    }
+    if (pending?.status === "rejected") {
+      return res.status(403).json({ message: "Your account request was rejected." });
+    }
     return res.status(401).json({ message: "Invalid credentials" });
   }
   const match = await bcrypt.compare(payload.password, user.password);
