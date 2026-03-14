@@ -6,6 +6,7 @@ import AuditLog from "../models/AuditLog.js";
 import { getDeviceName } from "../utils/requestMeta.js";
 
 const SWMS_PREFIX = "7376231SWMS";
+const sessionCache = { at: 0, data: null };
 
 const serializeUser = (user) => ({
   id: user._id,
@@ -47,12 +48,16 @@ export const listUsers = async (req, res) => {
   const query = {};
   if (req.query.role) query.role = req.query.role;
   if (req.query.managerId) query.managerId = req.query.managerId;
-  const users = await User.find(query).select("-password");
+  const users = await User.find(query)
+    .select("_id swmsId name email role phone avatarUrl managerId teamRole notificationPrefs")
+    .lean();
   res.json(users);
 };
 
 export const teamByManager = async (req, res) => {
-  const users = await User.find({ managerId: req.params.managerId }).select("-password");
+  const users = await User.find({ managerId: req.params.managerId })
+    .select("_id name email role teamRole managerId avatarUrl")
+    .lean();
   res.json(users);
 };
 
@@ -114,7 +119,7 @@ export const updateProfile = async (req, res) => {
 export const listRegistrationRequests = async (req, res) => {
   const status = req.query.status || "pending";
   const query = status ? { status } : {};
-  const requests = await RegistrationRequest.find(query).sort({ createdAt: -1 });
+  const requests = await RegistrationRequest.find(query).sort({ createdAt: -1 }).lean();
   res.json(requests);
 };
 
@@ -188,7 +193,8 @@ export const listLoginActivity = async (req, res) => {
   })
     .sort({ createdAt: -1 })
     .limit(limit)
-    .populate("actorId", "name email role");
+    .populate("actorId", "name email role")
+    .lean();
 
   const items = logs
     .filter((log) => ["manager", "employee"].includes(log.actorId?.role))
@@ -211,16 +217,21 @@ export const listLoginActivity = async (req, res) => {
 };
 
 export const listSessionMonitor = async (req, res) => {
+  const now = Date.now();
+  if (sessionCache.data && now - sessionCache.at < 10_000) {
+    return res.json(sessionCache.data);
+  }
   const io = req.app.get("io");
   const onlineUsers = io?.onlineUsers || new Map();
-  const users = await User.find({ role: { $in: ["manager", "employee"] } }).select(
-    "_id name email role"
-  );
+  const users = await User.find({ role: { $in: ["manager", "employee"] } })
+    .select("_id name email role")
+    .lean();
   const userIds = users.map((u) => u._id);
   const logs = await AuditLog.find({ actorId: { $in: userIds } })
     .sort({ createdAt: -1 })
     .limit(5000)
-    .select("actorId action createdAt");
+    .select("actorId action createdAt")
+    .lean();
 
   const stats = new Map();
   logs.forEach((log) => {
@@ -253,5 +264,8 @@ export const listSessionMonitor = async (req, res) => {
     };
   });
 
-  res.json(sessions.sort((a, b) => Number(b.isOnline) - Number(a.isOnline)));
+  const sorted = sessions.sort((a, b) => Number(b.isOnline) - Number(a.isOnline));
+  sessionCache.at = now;
+  sessionCache.data = sorted;
+  res.json(sorted);
 };

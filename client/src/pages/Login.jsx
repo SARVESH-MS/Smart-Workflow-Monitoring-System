@@ -1,14 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { googleAuth, login } from "../api/auth.js";
 import { useAuth } from "../utils/AuthContext.jsx";
 import GoogleAuthButton from "../components/GoogleAuthButton.jsx";
 
-const Login = () => {
+const ROLE_LABELS = {
+  admin: "Admin",
+  manager: "Manager",
+  employee: "Employee"
+};
+
+const Login = ({ role }) => {
   const navigate = useNavigate();
   const { setSession } = useAuth();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
+  const portalRole = role || selectedRole;
+  const portalLabel = useMemo(() => ROLE_LABELS[portalRole] || "Role", [portalRole]);
 
   useEffect(() => {
     setError("");
@@ -25,7 +34,16 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const data = await login(form);
+      if (!portalRole) {
+        setError("Select a role to continue.");
+        return;
+      }
+      const payload = { ...form, role: portalRole };
+      const data = await login(payload);
+      if (portalRole && data.user.role !== portalRole) {
+        setError(`${portalLabel} portal only. Use the correct login page.`);
+        return;
+      }
       setSession(data.token, data.user);
       if (data.user.role === "admin") navigate("/admin");
       if (data.user.role === "manager") navigate(`/manager/${data.user.id}`);
@@ -37,7 +55,16 @@ const Login = () => {
 
   const handleGoogleLogin = async (credential) => {
     try {
-      const data = await googleAuth({ credential, mode: "login" });
+      const enforceRole = Boolean(role);
+      const data = await googleAuth({
+        credential,
+        mode: "login",
+        ...(enforceRole ? { role: portalRole } : {})
+      });
+      if (enforceRole && data.user.role !== portalRole) {
+        setError(`${portalLabel} portal only. Use the correct login page.`);
+        return;
+      }
       setSession(data.token, data.user);
       if (data.user.role === "admin") navigate("/admin");
       if (data.user.role === "manager") navigate(`/manager/${data.user.id}`);
@@ -49,8 +76,30 @@ const Login = () => {
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold">Welcome back</h2>
-      <p className="text-sm text-slate-400">Sign in to continue to your workspace.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-2xl font-semibold">
+            {portalRole ? `${portalLabel} Login` : "Welcome back"}
+          </h2>
+          <p className="text-sm text-slate-400">
+            {portalRole ? `Sign in to the ${portalLabel} portal.` : "Sign in to continue to your workspace."}
+          </p>
+        </div>
+        {!role && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {["admin", "manager", "employee"].map((key) => (
+              <button
+                key={key}
+                type="button"
+                className={selectedRole === key ? "btn-primary px-3 py-1 text-xs" : "btn-ghost px-3 py-1 text-xs"}
+                onClick={() => setSelectedRole(key)}
+              >
+                {ROLE_LABELS[key]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
         <label className="grid gap-2">
           <span className="text-xs uppercase tracking-wide text-slate-400">Email</span>

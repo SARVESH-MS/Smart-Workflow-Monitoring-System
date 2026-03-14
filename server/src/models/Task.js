@@ -23,4 +23,7 @@ const TaskSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+TaskSchema.index({ projectId: 1, createdAt: -1 });
+TaskSchema.index({ userId: 1, createdAt: -1 });
+
 export default mongoose.model("Task", TaskSchema);

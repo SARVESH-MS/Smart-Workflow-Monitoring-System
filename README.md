@@ -149,6 +149,4 @@ Optional notifications:
   - Mar 9, 2026
 
 
-
-
-client/src/layouts/AuthLayout.jsx
+  

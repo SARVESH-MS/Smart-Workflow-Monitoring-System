@@ -21,6 +21,9 @@ const router = createBrowserRouter([
       { path: "/", element: <Navigate to="/home" replace /> },
       { path: "/home", element: null },
       { path: "/login", element: <Login /> },
+      { path: "/login/admin", element: <Login role="admin" /> },
+      { path: "/login/manager", element: <Login role="manager" /> },
+      { path: "/login/employee", element: <Login role="employee" /> },
       { path: "/register", element: <Register /> }
     ]
   },

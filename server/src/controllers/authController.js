@@ -22,13 +22,14 @@ const registerSchema = z.object({
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8)
+  password: z.string().min(8),
+  role: z.enum(["admin", "manager", "employee"]).optional()
 });
 
 const googleAuthSchema = z.object({
   credential: z.string().min(10),
   mode: z.enum(["login", "register"]),
-  role: z.enum(["manager", "employee"]).optional(),
+  role: z.enum(["admin", "manager", "employee"]).optional(),
   companyId: z.string().optional(),
   teamRole: z.enum(["designer", "frontend", "backend", "tester", "manager"]).optional()
 });
@@ -42,6 +43,14 @@ const signToken = (user) => {
 };
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const warmGoogleCerts = () => {
+  if (!process.env.GOOGLE_CLIENT_ID) return;
+  googleClient.getFederatedSignonCerts().catch(() => null);
+};
+
+warmGoogleCerts();
+setInterval(warmGoogleCerts, 6 * 60 * 60 * 1000).unref();
 
 export const register = async (req, res) => {
   const payload = registerSchema.parse(req.body);
@@ -106,11 +115,15 @@ export const googleAuth = async (req, res) => {
     return res.status(500).json({ message: "Google auth is not configured" });
   }
 
+  const timingEnabled = process.env.DEBUG_AUTH_TIMING === "1";
+  const timingStart = timingEnabled ? Date.now() : 0;
+
   const payload = googleAuthSchema.parse(req.body);
   const ticket = await googleClient.verifyIdToken({
     idToken: payload.credential,
     audience: process.env.GOOGLE_CLIENT_ID
   });
+  const afterVerify = timingEnabled ? Date.now() : 0;
   const googleUser = ticket.getPayload();
 
   if (!googleUser?.email || !googleUser?.email_verified) {
@@ -121,9 +134,15 @@ export const googleAuth = async (req, res) => {
   const name = googleUser.name || email.split("@")[0];
 
   if (payload.mode === "login") {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email })
+      .select("_id swmsId name email role phone avatarUrl managerId teamRole notificationPrefs")
+      .lean();
+    const afterLookup = timingEnabled ? Date.now() : 0;
     if (!user) {
       return res.status(401).json({ message: "No account found. Please sign up first." });
+    }
+    if (payload.role && user.role !== payload.role) {
+      return res.status(403).json({ message: "Account does not match this portal" });
     }
     await logAudit({
       actorId: user._id,
@@ -133,6 +152,12 @@ export const googleAuth = async (req, res) => {
       meta: { ...getRequestMeta(req), provider: "google" }
     });
     const token = signToken(user);
+    if (timingEnabled) {
+      const total = afterLookup - timingStart;
+      const verifyMs = afterVerify - timingStart;
+      const lookupMs = afterLookup - afterVerify;
+      console.warn(`[auth/google] verifyIdToken=${verifyMs}ms userLookup=${lookupMs}ms total=${total}ms`);
+    }
     return res.json({ token, user: sanitizeUser(user) });
   }
 
@@ -142,6 +167,9 @@ export const googleAuth = async (req, res) => {
   }
   if (!payload.role) {
     return res.status(400).json({ message: "Role is required" });
+  }
+  if (payload.role === "admin") {
+    return res.status(400).json({ message: "Admin registration is restricted" });
   }
 
   const existing = await User.findOne({ email });
@@ -201,6 +229,9 @@ export const login = async (req, res) => {
   const match = await bcrypt.compare(payload.password, user.password);
   if (!match) {
     return res.status(401).json({ message: "Invalid credentials" });
+  }
+  if (payload.role && user.role !== payload.role) {
+    return res.status(403).json({ message: "Account does not match this portal" });
   }
   await logAudit({
     actorId: user._id,

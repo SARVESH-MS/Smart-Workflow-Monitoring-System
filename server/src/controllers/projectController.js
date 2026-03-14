@@ -35,10 +35,10 @@ export const listProjects = async (req, res) => {
     query.managerId = req.user.id;
   }
   if (req.user.role === "employee") {
-    const tasks = await Task.find({ userId: req.user.id }).select("projectId");
-    query._id = { $in: tasks.map((t) => t.projectId) };
+    const projectIds = await Task.distinct("projectId", { userId: req.user.id });
+    query._id = { $in: projectIds };
   }
-  const projects = await Project.find(query).sort({ createdAt: -1 });
+  const projects = await Project.find(query).sort({ createdAt: -1 }).lean();
   res.json(projects);
 };
 

@@ -27,4 +27,6 @@ const RegistrationRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+RegistrationRequestSchema.index({ status: 1, createdAt: -1 });
+
 export default mongoose.model("RegistrationRequest", RegistrationRequestSchema);

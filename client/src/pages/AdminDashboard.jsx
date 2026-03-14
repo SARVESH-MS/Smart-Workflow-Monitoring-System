@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { listProjects, createProject, updateProject } from "../api/projects.js";
 import { summary } from "../api/analytics.js";
 import StatCard from "../components/StatCard.jsx";
@@ -45,29 +45,25 @@ const AdminDashboard = () => {
     workflow: ["Planning", "Design", "Development", "Testing", "Done"]
   });
 
-  const loadSessionData = async () => {
-    const sessionData = await listSessionMonitor();
-    setSessionMonitor(sessionData);
-  };
-
-  const load = async () => {
-    const [projectsData, statsData, usersData, managerData, templateData, requestData, activityData, sessionData] = await Promise.all([
-      listProjects(),
-      summary(),
-      listUsers(),
-      listUsers("manager"),
-      listTemplates(),
-      listRegistrationRequests("pending"),
-      listLoginActivity(300),
-      listSessionMonitor()
-    ]);
+  const loadOverview = async () => {
+    const [projectsData, statsData] = await Promise.all([listProjects(), summary()]);
     setProjects(projectsData);
     setStats(statsData);
+  };
+
+  const loadUsersAndRequests = async () => {
+    const [usersData, managerData, requestData] = await Promise.all([
+      listUsers(),
+      listUsers("manager"),
+      listRegistrationRequests("pending")
+    ]);
     setUsers(usersData);
     setManagers(managerData);
     setRegistrationRequests(requestData);
-    setLoginActivity(activityData);
-    setSessionMonitor(sessionData);
+  };
+
+  const loadTemplates = async () => {
+    const templateData = await listTemplates();
     const map = {};
     templateData.forEach((t) => {
       map[t.key] = t;
@@ -75,27 +71,54 @@ const AdminDashboard = () => {
     setTemplates(map);
   };
 
+  const loadLoginActivity = async () => {
+    const activityData = await listLoginActivity(300);
+    setLoginActivity(activityData);
+  };
+
+  const loadSessionData = async () => {
+    const sessionData = await listSessionMonitor();
+    setSessionMonitor(sessionData);
+  };
+
   useEffect(() => {
-    load();
+    loadOverview();
+    loadUsersAndRequests();
   }, []);
   useEffect(() => {
     const socket = createSocket();
-    socket.on("project:created", load);
-    socket.on("project:updated", load);
-    socket.on("task:updated", load);
-    socket.on("presence:update", loadSessionData);
+    socket.on("project:created", loadOverview);
+    socket.on("project:updated", loadOverview);
+    socket.on("task:updated", loadOverview);
+    socket.on("presence:update", () => {
+      if (sessionMonitorOpen) {
+        loadSessionData();
+      }
+    });
     return () => socket.disconnect();
-  }, []);
+  }, [sessionMonitorOpen]);
 
   useEffect(() => {
+    if (!sessionMonitorOpen) return undefined;
+    loadSessionData();
     const timer = setInterval(loadSessionData, 10000);
     return () => clearInterval(timer);
-  }, []);
+  }, [sessionMonitorOpen]);
+
+  useEffect(() => {
+    if (!loginActivityOpen) return;
+    loadLoginActivity();
+  }, [loginActivityOpen]);
 
   useEffect(() => {
     if (!emailsOpen) return;
     listEmailLogs().then(setEmailLogs);
   }, [emailsOpen]);
+
+  useEffect(() => {
+    if (!templatesOpen) return;
+    loadTemplates();
+  }, [templatesOpen]);
 
   const columns = useMemo(
     () => [
@@ -143,7 +166,7 @@ const AdminDashboard = () => {
       managerId: "",
       workflow: ["Planning", "Design", "Development", "Testing", "Done"]
     });
-    load();
+    loadOverview();
   };
 
   return (
@@ -203,9 +226,9 @@ const AdminDashboard = () => {
       <div className="card">
         <h3 className="text-lg font-semibold">User Notification Overrides</h3>
         <p className="text-sm text-slate-400">Admin can update team preferences.</p>
-        <div className="mt-4 overflow-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-400">
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
+            <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
               <tr>
                 <th className="py-2 pr-4">User</th>
                 <th className="py-2 pr-4">Role</th>
@@ -263,9 +286,9 @@ const AdminDashboard = () => {
       <div id="authorization" className="card scroll-mt-6">
         <h3 className="text-lg font-semibold">New User Authorization</h3>
         <p className="text-sm text-slate-400">Approve or reject pending registration requests.</p>
-        <div className="mt-4 overflow-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-400">
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
+            <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
               <tr>
                 <th className="py-2 pr-4">Name</th>
                 <th className="py-2 pr-4">Email</th>
@@ -320,7 +343,7 @@ const AdminDashboard = () => {
                             managerId: requestManagerMap[req._id]
                           });
                           setRegistrationRequests((prev) => prev.filter((x) => x._id !== req._id));
-                          load();
+                          loadUsersAndRequests();
                         }}
                       >
                         Approve
@@ -356,9 +379,9 @@ const AdminDashboard = () => {
           <span className="text-xl text-slate-400">{sessionMonitorOpen ? "v" : ">"}</span>
         </button>
         {sessionMonitorOpen && (
-          <div className="mt-4 max-h-80 overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400">
+          <div className="mt-4 max-h-80 overflow-x-auto">
+            <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
+              <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
                 <tr>
                   <th className="py-2 pr-4">User</th>
                   <th className="py-2 pr-4">Role</th>
@@ -417,9 +440,9 @@ const AdminDashboard = () => {
           <span className="text-xl text-slate-400">{loginActivityOpen ? "v" : ">"}</span>
         </button>
         {loginActivityOpen && (
-          <div className="mt-4 max-h-80 overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400">
+          <div className="mt-4 max-h-80 overflow-x-auto">
+            <table className="min-w-[720px] w-full text-left text-xs sm:text-sm">
+              <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
                 <tr>
                   <th className="py-2 pr-4">User</th>
                   <th className="py-2 pr-4">Role</th>
@@ -587,4 +610,3 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
-

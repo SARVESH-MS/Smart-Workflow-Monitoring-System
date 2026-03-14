@@ -3,7 +3,8 @@ import Notification from "../models/Notification.js";
 export const listMyNotifications = async (req, res) => {
   const items = await Notification.find({ userId: req.user.id })
     .sort({ createdAt: -1 })
-    .limit(50);
+    .limit(50)
+    .lean();
   res.json(items);
 };
 

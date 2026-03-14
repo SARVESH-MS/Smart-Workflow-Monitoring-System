@@ -28,4 +28,7 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+UserSchema.index({ role: 1 });
+UserSchema.index({ managerId: 1 });
+
 export default mongoose.model("User", UserSchema);

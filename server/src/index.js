@@ -4,6 +4,7 @@ import http from "http";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import compression from "compression";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -28,6 +29,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { notFound, errorHandler } from "./middleware/error.js";
+import { slowLog } from "./middleware/slowLog.js";
 import { setupSockets } from "./sockets/index.js";
 
 dotenv.config();
@@ -45,11 +47,13 @@ const io = new Server(server, {
 
 app.set("io", io);
 
+app.use(compression());
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_URL || "*" }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(morgan("dev"));
+app.use(slowLog());
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");

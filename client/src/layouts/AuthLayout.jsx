@@ -16,7 +16,8 @@ const AuthLayout = () => {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("swms_theme") || localStorage.getItem("swms_auth_theme") || "dark"
   );
-  const showAuthPanel = location.pathname === "/login" || location.pathname === "/register";
+  const showAuthPanel =
+    location.pathname === "/register" || location.pathname.startsWith("/login");
 
   useEffect(() => {
     localStorage.setItem("swms_theme", theme);
@@ -56,12 +57,20 @@ const AuthLayout = () => {
       return;
     }
     navigate(path);
+    const scrollToTop = () => {
+      const container = document.getElementById("landing-scroll");
+      if (container) {
+        container.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    };
+    requestAnimationFrame(scrollToTop);
+    setTimeout(scrollToTop, 0);
   };
 
   return (
     <AuthProvider>
       <div className={`landing-shell h-screen overflow-hidden p-2 lg:p-3 ${theme === "light" ? "auth-theme-light" : "auth-theme-dark"}`}>
-        <header className="landing-topbar card mb-2 flex h-[84px] flex-wrap items-center justify-between gap-4 py-4">
+        <header className="landing-topbar card mb-2 flex h-[84px] flex-wrap items-center justify-between gap-4 py-4 relative z-40">
           <div className="landing-logo-box flex items-center rounded-lg px-2 py-1">
             {theme === "dark" ? (
               <img src={SWMS_LOGO} alt="SWMS" className="h-11 w-auto" />
@@ -114,12 +123,15 @@ const AuthLayout = () => {
 
         <section
           id="landing-scroll"
-          className={`landing-scroll-shell h-[calc(100vh-96px)] card relative overflow-y-auto no-scrollbar ${showAuthPanel ? "lg:pr-[440px]" : ""}`}
+          className="landing-scroll-shell h-[calc(100vh-96px)] card relative overflow-y-auto no-scrollbar z-0"
           onClick={() => {
             if (showAuthPanel) navigate("/home");
           }}
         >
-          <div id="landing-home" className="mt-2 grid gap-4">
+          <div
+            id="landing-home"
+            className={`mt-2 grid gap-4 transition-[padding] duration-300 ease-out ${showAuthPanel ? "lg:pr-[440px]" : ""}`}
+          >
             <h1 className="landing-hero-title text-4xl font-semibold leading-tight text-slate-100 md:text-6xl">Smart Workflow Monitoring System</h1>
             <p className="landing-hero-subtitle max-w-3xl text-slate-300">Plan projects, assign work, monitor progress, and detect delivery risks in one real-time operational workspace.</p>
 

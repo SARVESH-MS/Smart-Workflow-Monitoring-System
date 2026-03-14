@@ -124,7 +124,7 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
   };
 
   return (
-    <aside className="sidebar-shell sticky top-0 h-screen overflow-hidden p-6 border-r border-slate-800 bg-slate-950/60">
+    <aside className="sidebar-shell relative overflow-visible p-6 border-l border-slate-800 bg-slate-950/60 lg:border-l-0 lg:border-r lg:sticky lg:top-0 lg:h-screen lg:overflow-hidden">
       <div className="flex items-start justify-between">
         <div className="flex flex-col items-start gap-2">
           <div className="text-lg font-semibold">{title}</div>
@@ -164,7 +164,7 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
           </button>
         </div>
       </div>
-      <div className="mt-6 flex h-[calc(100vh-220px)] min-h-0 flex-col overflow-y-auto thin-scrollbar pr-1">
+      <div className="mt-6 flex h-auto min-h-0 flex-col overflow-visible pr-1 lg:h-[calc(100vh-220px)] lg:overflow-y-auto lg:thin-scrollbar">
         <div className="grid gap-3 text-sm text-slate-300">
           {user?.role === "admin" && (
             <>
@@ -188,7 +188,6 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
               <button className="card text-left" onClick={() => goTo("templates")}>Task Templates & Recurring</button>
               <button className="card text-left" onClick={() => goTo("gantt")}>Gantt Timeline</button>
               <button className="card text-left" onClick={() => goTo("capacity")}>Capacity & Availability</button>
-              <button className="card text-left" onClick={() => goTo("performance")}>Team Performance</button>
             </>
           )}
           {user?.role === "employee" && (

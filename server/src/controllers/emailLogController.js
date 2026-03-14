@@ -1,7 +1,7 @@
 import EmailLog from "../models/EmailLog.js";
 
 export const listEmailLogs = async (req, res) => {
-  const logs = await EmailLog.find({}).sort({ createdAt: -1 }).limit(200);
+  const logs = await EmailLog.find({}).sort({ createdAt: -1 }).limit(200).lean();
   res.json(logs);
 };
 
@@ -10,7 +10,7 @@ export const listMyEmails = async (req, res) => {
   if (!email) {
     return res.status(400).json({ message: "User email not found" });
   }
-  const logs = await EmailLog.find({ to: email }).sort({ createdAt: -1 }).limit(200);
+  const logs = await EmailLog.find({ to: email }).sort({ createdAt: -1 }).limit(200).lean();
   res.json(logs);
 };
 

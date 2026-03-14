@@ -10,7 +10,7 @@ const Register = () => {
     email: "",
     password: "",
     companyId: "",
-    role: "employee",
+    role: "",
     teamRole: "frontend"
   });
   const [error, setError] = useState("");
@@ -21,7 +21,15 @@ const Register = () => {
     setError("");
     setSuccess("");
     try {
-      const data = await register(form);
+      if (!form.role) {
+        setError("Select a role to continue.");
+        return;
+      }
+      const payload = {
+        ...form,
+        ...(form.role === "employee" ? {} : { teamRole: undefined })
+      };
+      const data = await register(payload);
       setSuccess(data.message || "Your progress has been sent to the Admin.");
     } catch (err) {
       setError(err.response?.data?.message || "Register failed");
@@ -40,13 +48,18 @@ const Register = () => {
     setError("");
     setSuccess("");
     try {
-      const data = await googleAuth({
+      if (!form.role) {
+        setError("Select a role to continue.");
+        return;
+      }
+      const payload = {
         credential,
         mode: "register",
         companyId: form.companyId,
         role: form.role,
-        teamRole: form.teamRole
-      });
+        ...(form.role === "employee" ? { teamRole: form.teamRole } : {})
+      };
+      const data = await googleAuth(payload);
       setSuccess(data.message || "Your progress has been sent to the Admin.");
     } catch (err) {
       setError(err.response?.data?.message || "Google sign up failed");
@@ -102,23 +115,26 @@ const Register = () => {
           value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value })}
         >
+          <option value="">Select role</option>
           <option value="manager">Manager</option>
           <option value="employee">Employee</option>
         </select>
         </label>
-        <label className="grid gap-2">
-          <span className="text-xs uppercase tracking-wide text-slate-400">Team role</span>
-        <select
-          className="auth-field w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
-          value={form.teamRole}
-          onChange={(e) => setForm({ ...form, teamRole: e.target.value })}
-        >
-          <option value="designer">Designer</option>
-          <option value="frontend">Frontend</option>
-          <option value="backend">Backend</option>
-          <option value="tester">Tester</option>
-        </select>
-        </label>
+        {form.role === "employee" && (
+          <label className="grid gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-400">Team role</span>
+          <select
+            className="auth-field w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
+            value={form.teamRole}
+            onChange={(e) => setForm({ ...form, teamRole: e.target.value })}
+          >
+            <option value="designer">Designer</option>
+            <option value="frontend">Frontend</option>
+            <option value="backend">Backend</option>
+            <option value="tester">Tester</option>
+          </select>
+          </label>
+        )}
         {error && <div className="text-sm text-red-400">{error}</div>}
         {success && <div className="text-sm text-emerald-300">{success}</div>}
         <button className="btn-primary" type="submit">Sign Up</button>

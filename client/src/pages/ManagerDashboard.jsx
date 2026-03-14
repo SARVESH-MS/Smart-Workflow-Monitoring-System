@@ -66,21 +66,24 @@ const ManagerDashboard = () => {
     deadline: ""
   });
 
-  const load = async () => {
-    const [teamData, projectsData, tasksData, templateData] = await Promise.all([
+  const loadOverview = async () => {
+    const [teamData, projectsData, tasksData] = await Promise.all([
       api.get(`/api/users/team/${id}`).then((res) => res.data),
       listProjects(),
-      listTasks(),
-      listTaskTemplates()
+      listTasks({ compact: 1 })
     ]);
     setTeam(teamData);
     setProjects(projectsData);
     setTasks(tasksData);
-    setTemplates(templateData);
     setSelectedProjectId((prev) => {
       if (prev && projectsData.some((p) => p._id === prev)) return prev;
       return projectsData.length > 0 ? projectsData[0]._id : "";
     });
+  };
+
+  const loadTemplates = async () => {
+    const templateData = await listTaskTemplates();
+    setTemplates(templateData);
   };
 
   const loadBadges = async () => {
@@ -96,7 +99,8 @@ const ManagerDashboard = () => {
   };
 
   useEffect(() => {
-    load();
+    loadOverview();
+    loadTemplates();
   }, [id]);
   useEffect(() => {
     loadBadges();
@@ -106,14 +110,14 @@ const ManagerDashboard = () => {
   useEffect(() => {
     const socket = createSocket();
     socket.on("task:created", () => {
-      load();
+      loadOverview();
       loadBadges();
     });
     socket.on("task:updated", () => {
-      load();
+      loadOverview();
       loadBadges();
     });
-    socket.on("project:updated", load);
+    socket.on("project:updated", loadOverview);
     return () => socket.disconnect();
   }, [id]);
 
@@ -176,7 +180,7 @@ const ManagerDashboard = () => {
                 delete next[task._id];
                 return next;
               });
-              load();
+              loadOverview();
             }}
           >
             Save
@@ -210,7 +214,7 @@ const ManagerDashboard = () => {
 
   const handleDrop = async (taskId, stage) => {
     await updateTask(taskId, { stage });
-    load();
+    loadOverview();
   };
 
   const ganttTasks = projectTasks.map((task) => {
@@ -232,7 +236,7 @@ const ManagerDashboard = () => {
     await createTask(form);
     setOpen(false);
     setForm({ projectId: "", userId: "", title: "", description: "", roleContribution: "", deadline: "" });
-    load();
+    loadOverview();
   };
 
   const triggerDownload = (blob, filename) => {
@@ -302,13 +306,18 @@ const ManagerDashboard = () => {
             ))}
           </div>
         </div>
-        <div className="card">
-          <h3 className="text-lg font-semibold">Team Snapshot</h3>
-          <p className="text-sm text-slate-400">Quick status of team workflow health.</p>
-          <div className="mt-4 grid gap-2 text-sm text-slate-300">
-            <div>Team members: {team.length}</div>
-            <div>Total tasks: {tasks.length}</div>
-            <div>Time spent: {formatDurationHours(totalTimeSpent)}</div>
+        <div className="grid gap-4">
+          <div className="card h-fit self-start">
+            <h3 className="text-lg font-semibold">Team Snapshot</h3>
+            <p className="text-sm text-slate-400">Quick status of team workflow health.</p>
+            <div className="mt-4 grid gap-2 text-sm text-slate-300">
+              <div>Team members: {team.length}</div>
+              <div>Total tasks: {tasks.length}</div>
+              <div>Time spent: {formatDurationHours(totalTimeSpent)}</div>
+            </div>
+          </div>
+          <div className="h-fit self-start">
+            <PerformanceScorecard />
           </div>
         </div>
       </div>
@@ -424,7 +433,7 @@ const ManagerDashboard = () => {
               if (selectedTaskIds.length === 0) return;
               await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "in_progress" } });
               setSelectedTaskIds([]);
-              load();
+              loadOverview();
             }}
           >
             Bulk In Progress
@@ -435,7 +444,7 @@ const ManagerDashboard = () => {
               if (selectedTaskIds.length === 0) return;
               await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "done" } });
               setSelectedTaskIds([]);
-              load();
+              loadOverview();
             }}
           >
             Bulk Done
@@ -678,7 +687,7 @@ const ManagerDashboard = () => {
                 className="btn-ghost"
                 onClick={async () => {
                   await createRecurring(recurringForm);
-                  load();
+                  loadOverview();
                   setRecurringForm({ templateId: "", projectId: "", userId: "", intervalDays: 7, occurrences: 5 });
                 }}
               >
@@ -697,7 +706,7 @@ const ManagerDashboard = () => {
           </div>
           <div className="text-xs text-slate-500">
             {ganttRange
-              ? `${ganttRange.minStart.format("MMM D")} – ${ganttRange.maxEnd.format("MMM D")}`
+              ? `${ganttRange.minStart.format("MMM D")} - ${ganttRange.maxEnd.format("MMM D")}`
               : "No tasks"}
           </div>
         </div>
@@ -730,9 +739,6 @@ const ManagerDashboard = () => {
         <AvailabilityCard />
       </div>
 
-      <div id="performance" className="scroll-mt-6">
-        <PerformanceScorecard />
-      </div>
 
       <Modal open={open} title="Assign Task" onClose={() => setOpen(false)}>
         <form className="grid gap-3" onSubmit={handleAssign}>

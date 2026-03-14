@@ -53,14 +53,25 @@ export const listTasks = async (req, res) => {
   const query = {};
   if (req.query.projectId) query.projectId = req.query.projectId;
   if (req.query.userId) query.userId = req.query.userId;
+  const compact = String(req.query.compact || "").toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 0), 2000);
+  const skip = Math.max(Number(req.query.skip || 0), 0);
   if (req.user.role === "manager") {
-    const projects = await Project.find({ managerId: req.user.id }).select("_id");
+    const projects = await Project.find({ managerId: req.user.id }).select("_id").lean();
     query.projectId = { $in: projects.map((p) => p._id) };
   }
   if (req.user.role === "employee") {
     query.userId = req.user.id;
   }
-  const tasks = await Task.find(query).sort({ createdAt: -1 });
+  let taskQuery = Task.find(query).sort({ createdAt: -1 });
+  if (compact === "1" || compact === "true") {
+    taskQuery = taskQuery.select(
+      "_id projectId userId title roleContribution stage startTime timeSpent status deadline isDelayed createdAt updatedAt"
+    );
+  }
+  if (skip) taskQuery = taskQuery.skip(skip);
+  if (limit) taskQuery = taskQuery.limit(limit);
+  const tasks = await taskQuery.lean();
   res.json(tasks);
 };
 
