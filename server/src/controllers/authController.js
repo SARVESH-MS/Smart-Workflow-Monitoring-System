@@ -43,10 +43,17 @@ const signToken = (user) => {
 };
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const findUserByEmail = (email) =>
-  User.findOne({ email: new RegExp(`^${escapeRegExp(email)}$`, "i") });
-const findRequestByEmail = (email) =>
-  RegistrationRequest.findOne({ email: new RegExp(`^${escapeRegExp(email)}$`, "i") }).lean();
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+const findUserByEmail = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return Promise.resolve(null);
+  return User.findOne({ email: new RegExp(`^${escapeRegExp(normalized)}$`, "i") });
+};
+const findRequestByEmail = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return Promise.resolve(null);
+  return RegistrationRequest.findOne({ email: new RegExp(`^${escapeRegExp(normalized)}$`, "i") }).lean();
+};
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -136,7 +143,7 @@ export const googleAuth = async (req, res) => {
     return res.status(400).json({ message: "Google account email is not verified" });
   }
 
-  const email = googleUser.email.toLowerCase();
+  const email = normalizeEmail(googleUser.email);
   const name = googleUser.name || email.split("@")[0];
 
   if (payload.mode === "login") {
