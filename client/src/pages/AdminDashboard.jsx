@@ -52,14 +52,29 @@ const AdminDashboard = () => {
   };
 
   const loadUsersAndRequests = async () => {
-    const [usersData, managerData, requestData] = await Promise.all([
+    const [usersResult, managersResult, requestsResult] = await Promise.allSettled([
       listUsers(),
       listUsers("manager"),
       listRegistrationRequests("pending")
     ]);
-    setUsers(usersData);
-    setManagers(managerData);
-    setRegistrationRequests(requestData);
+
+    if (usersResult.status === "fulfilled") {
+      setUsers(usersResult.value);
+    } else {
+      console.error("Failed to load users", usersResult.reason);
+    }
+
+    if (managersResult.status === "fulfilled") {
+      setManagers(managersResult.value);
+    } else {
+      console.error("Failed to load managers", managersResult.reason);
+    }
+
+    if (requestsResult.status === "fulfilled") {
+      setRegistrationRequests(requestsResult.value);
+    } else {
+      console.error("Failed to load registration requests", requestsResult.reason);
+    }
   };
 
   const loadTemplates = async () => {
