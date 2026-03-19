@@ -14,7 +14,7 @@ const AuthLayout = () => {
   const location = useLocation();
   const navRef = useRef(null);
   const [activeNav, setActiveNav] = useState("home");
-  const [navHint, setNavHint] = useState("");
+  const [navHint, setNavHint] = useState({ left: false, right: false });
   const [theme, setTheme] = useState(
     () => localStorage.getItem("swms_theme") || localStorage.getItem("swms_auth_theme") || "dark"
   );
@@ -33,24 +33,16 @@ const AuthLayout = () => {
     const syncNavHint = () => {
       const maxScrollLeft = nav.scrollWidth - nav.clientWidth;
       if (maxScrollLeft <= 4) {
-        setNavHint("");
+        setNavHint({ left: false, right: false });
         return;
       }
 
       const atStart = nav.scrollLeft <= 4;
       const atEnd = nav.scrollLeft >= maxScrollLeft - 4;
-
-      if (atStart) {
-        setNavHint(">>");
-        return;
-      }
-
-      if (atEnd) {
-        setNavHint("<<");
-        return;
-      }
-
-      setNavHint("<>");
+      setNavHint({
+        left: !atStart,
+        right: !atEnd
+      });
     };
 
     syncNavHint();
@@ -162,15 +154,18 @@ const AuthLayout = () => {
                 />
               </button>
             </nav>
-            {navHint && (
+            {navHint.left && (
               <div
-                className={`pointer-events-none absolute bottom-0 top-0 flex items-center px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden ${
-                  navHint === "<<"
-                    ? "left-0 bg-gradient-to-r from-slate-950/95 via-slate-950/70 to-transparent"
-                    : "right-0 bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent"
-                }`}
+                className="pointer-events-none absolute bottom-0 left-0 top-0 flex items-center bg-gradient-to-r from-slate-950/95 via-slate-950/70 to-transparent px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden"
               >
-                {navHint}
+                {"<<"}
+              </div>
+            )}
+            {navHint.right && (
+              <div
+                className="pointer-events-none absolute bottom-0 right-0 top-0 flex items-center bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden"
+              >
+                {">>"}
               </div>
             )}
           </div>
