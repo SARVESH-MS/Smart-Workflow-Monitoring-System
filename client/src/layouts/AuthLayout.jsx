@@ -78,47 +78,52 @@ const AuthLayout = () => {
               <img src={SWMS_LOGO_LIGHT} alt="SWMS" className="h-11 w-auto" />
             )}
           </div>
-          <nav className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar text-xs lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible">
-            {["home", "features", "modules", "contact"].map((item) => (
+          <div className="relative w-full lg:w-auto">
+            <nav className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar pr-12 text-xs lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible lg:pr-0">
+              {["home", "features", "modules", "contact"].map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => handleNav(item)}
+                  className={`landing-nav-btn shrink-0 rounded-full border px-4 py-2 ${
+                    activeNav === item
+                      ? "border-blue-400 bg-blue-500/20 text-blue-200"
+                      : "border-slate-700 bg-slate-900/50 text-slate-300"
+                  }`}
+                >
+                  {item[0].toUpperCase() + item.slice(1)}
+                </button>
+              ))}
               <button
-                key={item}
                 type="button"
-                onClick={() => handleNav(item)}
-                className={`landing-nav-btn shrink-0 rounded-full border px-4 py-2 ${
-                  activeNav === item
-                    ? "border-blue-400 bg-blue-500/20 text-blue-200"
-                    : "border-slate-700 bg-slate-900/50 text-slate-300"
-                }`}
+                onClick={() => openAuth("/login")}
+                className="landing-nav-btn shrink-0 rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
               >
-                {item[0].toUpperCase() + item.slice(1)}
+                Login
               </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => openAuth("/login")}
-              className="landing-nav-btn shrink-0 rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              onClick={() => openAuth("/register")}
-              className="landing-nav-btn shrink-0 rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
-            >
-              Sign Up
-            </button>
-            <button
-              type="button"
-              className="landing-icon-btn btn-ghost h-12 w-12 shrink-0 overflow-visible rounded-full p-0"
-              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-            >
-              <img
-                src={theme === "dark" ? LIGHT_MODE_IMAGE : DARK_MODE_IMAGE}
-                alt={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                className="h-12 w-12 rounded-full"
-              />
-            </button>
-          </nav>
+              <button
+                type="button"
+                onClick={() => openAuth("/register")}
+                className="landing-nav-btn shrink-0 rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
+              >
+                Sign Up
+              </button>
+              <button
+                type="button"
+                className="landing-icon-btn btn-ghost h-12 w-12 shrink-0 overflow-visible rounded-full p-0"
+                onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              >
+                <img
+                  src={theme === "dark" ? LIGHT_MODE_IMAGE : DARK_MODE_IMAGE}
+                  alt={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                  className="h-12 w-12 rounded-full"
+                />
+              </button>
+            </nav>
+            <div className="pointer-events-none absolute bottom-0 right-0 top-0 flex items-center bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden">
+              &gt;&gt;
+            </div>
+          </div>
         </header>
 
         <section
