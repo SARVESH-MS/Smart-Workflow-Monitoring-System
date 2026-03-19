@@ -156,16 +156,16 @@ const AuthLayout = () => {
             </nav>
             {navHint.left && (
               <div
-                className="pointer-events-none absolute bottom-0 left-0 top-0 flex items-center bg-gradient-to-r from-slate-950/95 via-slate-950/70 to-transparent px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden"
+                className="pointer-events-none absolute bottom-0 left-0 top-0 flex items-center bg-gradient-to-r from-slate-950/95 via-slate-950/70 to-transparent px-2 lg:hidden"
               >
-                {"<<"}
+                <span className="landing-nav-hint">{"<<"}</span>
               </div>
             )}
             {navHint.right && (
               <div
-                className="pointer-events-none absolute bottom-0 right-0 top-0 flex items-center bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden"
+                className="pointer-events-none absolute bottom-0 right-0 top-0 flex items-center bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent px-2 lg:hidden"
               >
-                {">>"}
+                <span className="landing-nav-hint">{">>"}</span>
               </div>
             )}
           </div>

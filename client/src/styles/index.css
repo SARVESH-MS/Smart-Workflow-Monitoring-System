@@ -383,14 +383,42 @@ body::-webkit-scrollbar {
   border: 1px solid rgba(148, 163, 184, 0.24);
 }
 
+.landing-nav-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  backdrop-filter: blur(8px);
+}
+
 .auth-theme-light .landing-logo-box {
   background: #ffffff;
   border: 1px solid #d1d9e6;
 }
 
+.auth-theme-light .landing-nav-hint {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(148, 163, 184, 0.45);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
 .auth-theme-dark .landing-logo-box {
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.auth-theme-dark .landing-nav-hint {
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(148, 163, 184, 0.3);
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.45);
 }
 
 .landing-scroll-shell {
