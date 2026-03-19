@@ -22,6 +22,7 @@ import GlobalSearch from "../components/GlobalSearch.jsx";
 import DigestSender from "../components/DigestSender.jsx";
 
 const AdminDashboard = () => {
+  const defaultWorkflow = ["Planning", "Design", "Development", "Testing", "Done"];
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -37,13 +38,32 @@ const AdminDashboard = () => {
   const [sessionMonitorOpen, setSessionMonitorOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [open, setOpen] = useState(false);
+  const [draggedStage, setDraggedStage] = useState("");
   const [form, setForm] = useState({
     name: "",
     description: "",
     deadline: "",
     managerId: "",
-    workflow: ["Planning", "Design", "Development", "Testing", "Done"]
+    workflow: defaultWorkflow
   });
+
+  const moveWorkflowStage = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    setForm((current) => {
+      const nextWorkflow = [...current.workflow];
+      const [movedStage] = nextWorkflow.splice(fromIndex, 1);
+      nextWorkflow.splice(toIndex, 0, movedStage);
+      return { ...current, workflow: nextWorkflow };
+    });
+  };
+
+  const handleWorkflowDrop = (targetStage) => {
+    if (!draggedStage || draggedStage === targetStage) return;
+    const fromIndex = form.workflow.indexOf(draggedStage);
+    const toIndex = form.workflow.indexOf(targetStage);
+    moveWorkflowStage(fromIndex, toIndex);
+    setDraggedStage("");
+  };
 
   const loadOverview = async () => {
     const [projectsData, statsData] = await Promise.all([listProjects(), summary()]);
@@ -179,7 +199,7 @@ const AdminDashboard = () => {
       description: "",
       deadline: "",
       managerId: "",
-      workflow: ["Planning", "Design", "Development", "Testing", "Done"]
+      workflow: defaultWorkflow
     });
     loadOverview();
   };
@@ -215,12 +235,45 @@ const AdminDashboard = () => {
           <h3 className="text-lg font-semibold">Workflow Builder</h3>
           <p className="text-sm text-slate-400">Drag and reorder stages</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            {form.workflow.map((stage) => (
-              <div key={stage} draggable className="rounded-full border border-slate-700 px-3 py-1 text-xs">
-                {stage}
+            {form.workflow.map((stage, index) => (
+              <div
+                key={stage}
+                draggable
+                onDragStart={() => setDraggedStage(stage)}
+                onDragEnd={() => setDraggedStage("")}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => handleWorkflowDrop(stage)}
+                className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition ${
+                  draggedStage === stage
+                    ? "border-blue-400 bg-blue-500/10 text-blue-200"
+                    : "border-slate-700"
+                }`}
+              >
+                <button
+                  type="button"
+                  className="text-slate-400 disabled:opacity-30"
+                  disabled={index === 0}
+                  onClick={() => moveWorkflowStage(index, index - 1)}
+                  aria-label={`Move ${stage} left`}
+                >
+                  ←
+                </button>
+                <span>{stage}</span>
+                <button
+                  type="button"
+                  className="text-slate-400 disabled:opacity-30"
+                  disabled={index === form.workflow.length - 1}
+                  onClick={() => moveWorkflowStage(index, index + 1)}
+                  aria-label={`Move ${stage} right`}
+                >
+                  →
+                </button>
               </div>
             ))}
           </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Reordered stages will be used for new projects created from this admin session.
+          </p>
         </div>
         <CompletionChart completed={stats?.completed ?? 0} total={stats?.totalTasks ?? 0} />
       </div>
