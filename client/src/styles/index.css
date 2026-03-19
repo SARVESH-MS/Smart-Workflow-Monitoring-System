@@ -12,10 +12,17 @@ body {
     #020617;
   scrollbar-width: none;
   overflow-x: hidden;
+  caret-color: transparent;
 }
 
 html {
   scrollbar-width: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  caret-color: auto;
 }
 
 html::-webkit-scrollbar,
