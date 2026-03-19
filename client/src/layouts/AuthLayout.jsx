@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider } from "../utils/AuthContext.jsx";
 
@@ -12,7 +12,9 @@ const SWMS_LOGO_LIGHT = "/swms-logo-light.png";
 const AuthLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const navRef = useRef(null);
   const [activeNav, setActiveNav] = useState("home");
+  const [navHint, setNavHint] = useState("");
   const [theme, setTheme] = useState(
     () => localStorage.getItem("swms_theme") || localStorage.getItem("swms_auth_theme") || "dark"
   );
@@ -23,6 +25,43 @@ const AuthLayout = () => {
     localStorage.setItem("swms_theme", theme);
     localStorage.setItem("swms_auth_theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return undefined;
+
+    const syncNavHint = () => {
+      const maxScrollLeft = nav.scrollWidth - nav.clientWidth;
+      if (maxScrollLeft <= 4) {
+        setNavHint("");
+        return;
+      }
+
+      const atStart = nav.scrollLeft <= 4;
+      const atEnd = nav.scrollLeft >= maxScrollLeft - 4;
+
+      if (atStart) {
+        setNavHint(">>");
+        return;
+      }
+
+      if (atEnd) {
+        setNavHint("<<");
+        return;
+      }
+
+      setNavHint("<>");
+    };
+
+    syncNavHint();
+    nav.addEventListener("scroll", syncNavHint, { passive: true });
+    window.addEventListener("resize", syncNavHint);
+
+    return () => {
+      nav.removeEventListener("scroll", syncNavHint);
+      window.removeEventListener("resize", syncNavHint);
+    };
+  }, [theme, location.pathname]);
 
   const goToSection = (key) => {
     const container = document.getElementById("landing-scroll");
@@ -79,7 +118,10 @@ const AuthLayout = () => {
             )}
           </div>
           <div className="relative w-full lg:w-auto">
-            <nav className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar pr-12 text-xs lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible lg:pr-0">
+            <nav
+              ref={navRef}
+              className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar pr-12 text-xs lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible lg:pr-0"
+            >
               {["home", "features", "modules", "contact"].map((item) => (
                 <button
                   key={item}
@@ -120,9 +162,17 @@ const AuthLayout = () => {
                 />
               </button>
             </nav>
-            <div className="pointer-events-none absolute bottom-0 right-0 top-0 flex items-center bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden">
-              &gt;&gt;
-            </div>
+            {navHint && (
+              <div
+                className={`pointer-events-none absolute bottom-0 top-0 flex items-center px-3 text-sm font-semibold tracking-wide text-slate-300 lg:hidden ${
+                  navHint === "<<"
+                    ? "left-0 bg-gradient-to-r from-slate-950/95 via-slate-950/70 to-transparent"
+                    : "right-0 bg-gradient-to-l from-slate-950/95 via-slate-950/70 to-transparent"
+                }`}
+              >
+                {navHint}
+              </div>
+            )}
           </div>
         </header>
 
