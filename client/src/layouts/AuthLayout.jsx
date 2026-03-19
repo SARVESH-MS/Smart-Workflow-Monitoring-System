@@ -69,8 +69,8 @@ const AuthLayout = () => {
 
   return (
     <AuthProvider>
-      <div className={`landing-shell h-screen overflow-hidden p-2 lg:p-3 ${theme === "light" ? "auth-theme-light" : "auth-theme-dark"}`}>
-        <header className="landing-topbar card mb-2 flex h-[84px] flex-wrap items-center justify-between gap-4 py-4 relative z-40">
+      <div className={`landing-shell flex h-screen flex-col overflow-hidden p-2 lg:p-3 ${theme === "light" ? "auth-theme-light" : "auth-theme-dark"}`}>
+        <header className="landing-topbar card relative z-40 mb-2 flex min-h-[84px] flex-col gap-3 py-3 lg:h-[84px] lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-4 lg:py-4">
           <div className="landing-logo-box flex items-center rounded-lg px-2 py-1">
             {theme === "dark" ? (
               <img src={SWMS_LOGO} alt="SWMS" className="h-11 w-auto" />
@@ -78,13 +78,13 @@ const AuthLayout = () => {
               <img src={SWMS_LOGO_LIGHT} alt="SWMS" className="h-11 w-auto" />
             )}
           </div>
-          <nav className="flex flex-wrap items-center gap-2 text-xs">
+          <nav className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar text-xs lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible">
             {["home", "features", "modules", "contact"].map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => handleNav(item)}
-                className={`landing-nav-btn rounded-full border px-4 py-2 ${
+                className={`landing-nav-btn shrink-0 rounded-full border px-4 py-2 ${
                   activeNav === item
                     ? "border-blue-400 bg-blue-500/20 text-blue-200"
                     : "border-slate-700 bg-slate-900/50 text-slate-300"
@@ -96,20 +96,20 @@ const AuthLayout = () => {
             <button
               type="button"
               onClick={() => openAuth("/login")}
-              className="landing-nav-btn rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
+              className="landing-nav-btn shrink-0 rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
             >
               Login
             </button>
             <button
               type="button"
               onClick={() => openAuth("/register")}
-              className="landing-nav-btn rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
+              className="landing-nav-btn shrink-0 rounded-full border border-slate-700 bg-slate-900/50 px-4 py-2 text-slate-300"
             >
               Sign Up
             </button>
             <button
               type="button"
-              className="landing-icon-btn btn-ghost h-12 w-12 rounded-full p-0 overflow-visible"
+              className="landing-icon-btn btn-ghost h-12 w-12 shrink-0 overflow-visible rounded-full p-0"
               onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
             >
               <img
@@ -123,7 +123,7 @@ const AuthLayout = () => {
 
         <section
           id="landing-scroll"
-          className="landing-scroll-shell h-[calc(100vh-96px)] card relative overflow-y-auto no-scrollbar z-0"
+          className="landing-scroll-shell card relative z-0 min-h-0 flex-1 overflow-y-auto no-scrollbar"
           onClick={() => {
             if (showAuthPanel) navigate("/home");
           }}
@@ -132,7 +132,7 @@ const AuthLayout = () => {
             id="landing-home"
             className={`mt-2 grid gap-4 transition-[padding] duration-300 ease-out ${showAuthPanel ? "lg:pr-[440px]" : ""}`}
           >
-            <h1 className="landing-hero-title text-4xl font-semibold leading-tight text-slate-100 md:text-6xl">Smart Workflow Monitoring System</h1>
+            <h1 className="landing-hero-title text-3xl font-semibold leading-tight text-slate-100 sm:text-4xl md:text-6xl">Smart Workflow Monitoring System</h1>
             <p className="landing-hero-subtitle max-w-3xl text-slate-300">Plan projects, assign work, monitor progress, and detect delivery risks in one real-time operational workspace.</p>
 
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
