@@ -249,7 +249,7 @@ const ManagerDashboard = () => {
   };
 
   return (
-    <div className="grid gap-6">
+    <div className="dashboard-page grid min-w-0 gap-6">
       <div id="overview" className="flex flex-wrap items-center justify-between gap-4 scroll-mt-6">
         <div>
           <h1 className="text-3xl font-semibold">Manager Dashboard</h1>

@@ -28,7 +28,7 @@ const ManagerLayout = () => {
 
   return (
     <div className={`min-h-screen grid grid-cols-1 lg:h-screen lg:grid-cols-[260px_1fr] lg:overflow-hidden ${theme === "light" ? "dashboard-theme-light" : "dashboard-theme-dark"}`}>
-      <main className="order-1 min-w-0 overflow-x-hidden p-4 sm:p-6 lg:order-2 lg:h-screen lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+      <main className="order-1 min-w-0 w-full overflow-x-hidden p-4 sm:p-6 lg:order-2 lg:h-screen lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
         <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-2 flex justify-end bg-inherit px-4 pt-4 pb-2 sm:hidden">
           <button className="btn-ghost px-3 py-2 text-sm" type="button" onClick={() => setSidebarOpen(true)}>
             Menu

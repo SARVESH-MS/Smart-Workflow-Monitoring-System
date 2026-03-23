@@ -114,7 +114,7 @@ const EmployeeDashboard = () => {
   };
 
   return (
-    <div className="grid gap-6">
+    <div className="dashboard-page grid min-w-0 gap-6">
       <div id="overview" className="grid gap-4 lg:grid-cols-[1.2fr_1fr] items-start scroll-mt-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
