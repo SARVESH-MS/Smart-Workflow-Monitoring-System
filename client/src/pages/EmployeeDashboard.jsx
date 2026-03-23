@@ -121,7 +121,7 @@ const EmployeeDashboard = () => {
             <h1 className="text-3xl font-semibold">Employee Dashboard</h1>
             <p className="text-slate-400">Track your tasks and time</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
           <button className="btn-ghost relative" onClick={() => navigate(`/employee/${id}/inbox`)}>
             Emails
             {unreadEmails > 0 && (
@@ -164,7 +164,7 @@ const EmployeeDashboard = () => {
       </div>
     </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-4">
         <StatCard label="Assigned Tasks" value={tasks.length} />
         <StatCard label="Active Task" value={active?.title || "None"} />
         <StatCard label="Delayed" value={tasks.filter((t) => t.isDelayed).length} />
@@ -193,8 +193,12 @@ const EmployeeDashboard = () => {
         </div>
       )}
 
-      <div id="tasks" className="card overflow-auto scroll-mt-6">
-        <table className="w-full text-left text-sm">
+      <div id="tasks" className="card min-w-0 scroll-mt-6">
+        <div
+          className="w-full overflow-x-auto overflow-y-hidden thin-scrollbar"
+          style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+        >
+        <table className="min-w-[560px] w-full text-left text-sm sm:min-w-[640px]">
           <thead className="text-xs uppercase text-slate-400">
             <tr>
               <th className="py-3 pr-4">Task</th>
@@ -225,9 +229,9 @@ const EmployeeDashboard = () => {
                       <span>{task.title}</span>
                     </button>
                   </td>
-                  <td className="py-3 pr-4 text-slate-200">{task.roleContribution}</td>
-                  <td className="py-3 pr-4 text-slate-200">{task.deadline}</td>
-                  <td className="py-3 pr-4 text-slate-200">{task.timeSpent}</td>
+                  <td className="break-words py-3 pr-4 text-slate-200">{task.roleContribution}</td>
+                  <td className="break-words py-3 pr-4 text-slate-200">{task.deadline}</td>
+                  <td className="break-words py-3 pr-4 text-slate-200">{task.timeSpent}</td>
                   <td className="py-3 pr-4 text-slate-200">
                     <select
                       className="rounded-lg bg-slate-900 px-3 py-2 text-sm"
@@ -254,9 +258,10 @@ const EmployeeDashboard = () => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <CompletionChart
           completed={tasks.filter((t) => t.status === "done").length}
           total={tasks.length}

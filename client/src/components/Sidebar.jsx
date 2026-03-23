@@ -12,8 +12,8 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [savingPrefs, setSavingPrefs] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileForm, setProfileForm] = useState({
     name: "",
@@ -64,7 +64,30 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
     }, 50);
   };
 
+  const resetProfileDraft = () => {
+    setProfileError("");
+    setIsEditingProfile(false);
+    setProfileForm({
+      name: user?.name || "",
+      phone: user?.phone || "",
+      email: user?.email || "",
+      id: user?.swmsId || "",
+      avatarUrl: user?.avatarUrl || ""
+    });
+    setPrefsForm({
+      emailDelay: Boolean(user?.notificationPrefs?.emailDelay),
+      emailComplete: Boolean(user?.notificationPrefs?.emailComplete),
+      smsDelay: Boolean(user?.notificationPrefs?.smsDelay)
+    });
+  };
+
+  const closeProfileModal = () => {
+    resetProfileDraft();
+    setProfileOpen(false);
+  };
+
   const onAvatarSelect = (event) => {
+    if (!isEditingProfile) return;
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -92,11 +115,14 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
         phone: profileForm.phone.trim(),
         avatarUrl: profileForm.avatarUrl
       };
-      const data = await updateProfile(payload);
-      if (data?.user) {
-        localStorage.setItem("swms_user", JSON.stringify(data.user));
-        window.dispatchEvent(new CustomEvent("swms:user-updated", { detail: data.user }));
+      const profileData = await updateProfile(payload);
+      const prefsData = await updatePreferences(prefsForm);
+      const nextUser = prefsData?.user || profileData?.user;
+      if (nextUser) {
+        localStorage.setItem("swms_user", JSON.stringify(nextUser));
+        window.dispatchEvent(new CustomEvent("swms:user-updated", { detail: nextUser }));
       }
+      setIsEditingProfile(false);
       setProfileOpen(false);
     } catch (error) {
       setProfileError(error?.response?.data?.message || "Unable to update profile.");
@@ -105,26 +131,8 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
     }
   };
 
-  const savePreferences = async (nextPrefs) => {
-    try {
-      setSavingPrefs(true);
-      const data = await updatePreferences(nextPrefs);
-      if (data?.user) {
-        localStorage.setItem("swms_user", JSON.stringify(data.user));
-        window.dispatchEvent(new CustomEvent("swms:user-updated", { detail: data.user }));
-        setPrefsForm({
-          emailDelay: Boolean(data.user?.notificationPrefs?.emailDelay),
-          emailComplete: Boolean(data.user?.notificationPrefs?.emailComplete),
-          smsDelay: Boolean(data.user?.notificationPrefs?.smsDelay)
-        });
-      }
-    } finally {
-      setSavingPrefs(false);
-    }
-  };
-
   return (
-    <aside className="sidebar-shell relative overflow-visible p-6 border-l border-slate-800 bg-slate-950/60 lg:border-l-0 lg:border-r lg:sticky lg:top-0 lg:h-screen lg:overflow-hidden">
+    <aside className="sidebar-shell relative flex min-h-0 flex-col overflow-visible border-l border-slate-800 bg-slate-950/60 p-6 lg:h-full lg:overflow-hidden lg:border-l-0 lg:border-r">
       <div className="flex items-start justify-between">
         <div className="flex flex-col items-start gap-2">
           <div className="text-lg font-semibold">{title}</div>
@@ -164,7 +172,7 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
           </button>
         </div>
       </div>
-      <div className="mt-6 flex h-auto min-h-0 flex-col overflow-visible pr-1 lg:h-[calc(100vh-220px)] lg:overflow-y-auto lg:thin-scrollbar">
+      <div className="mt-6 flex h-auto min-h-0 flex-col overflow-visible pr-1 lg:flex-1 lg:overflow-y-auto lg:thin-scrollbar">
         <div className="grid gap-3 text-sm text-slate-300">
           {user?.role === "admin" && (
             <>
@@ -213,7 +221,7 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
               <h3 className="text-2xl font-semibold text-slate-100">My Profile</h3>
               <p className="mt-1 text-sm text-slate-400">Manage your personal details and profile picture.</p>
             </div>
-            <button className="btn-ghost px-3 py-1.5" onClick={() => setProfileOpen(false)}>
+            <button className="btn-ghost px-3 py-1.5" onClick={closeProfileModal}>
               Close
             </button>
           </div>
@@ -231,18 +239,24 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
                   avatarFallback
                 )}
               </div>
-              <label className="btn-ghost cursor-pointer text-sm">
-                Update picture
-                <input type="file" accept="image/*" className="hidden" onChange={onAvatarSelect} />
-              </label>
+              {isEditingProfile ? (
+                <label className="btn-ghost cursor-pointer text-sm">
+                  Update picture
+                  <input type="file" accept="image/*" className="hidden" onChange={onAvatarSelect} />
+                </label>
+              ) : (
+                <span className="text-xs text-slate-400">Click Edit Profile to change picture</span>
+              )}
             </div>
 
             <div className="grid gap-3">
               <label className="grid gap-1 text-sm">
                 <span className="text-slate-300">Name</span>
                 <input
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
                   value={profileForm.name}
+                  readOnly={!isEditingProfile}
+                  disabled={!isEditingProfile}
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
                 />
               </label>
@@ -257,9 +271,11 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
               <label className="grid gap-1 text-sm">
                 <span className="text-slate-300">Phone No</span>
                 <input
-                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 disabled:cursor-not-allowed disabled:text-slate-400"
                   placeholder="+91 9XXXXXXXXX"
                   value={profileForm.phone}
+                  readOnly={!isEditingProfile}
+                  disabled={!isEditingProfile}
                   onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))}
                 />
               </label>
@@ -276,7 +292,7 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
               <div className="mt-2 rounded-xl border border-slate-700 bg-slate-900/40 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-200">Notifications</span>
-                  {savingPrefs && <span className="text-xs text-slate-400">Saving...</span>}
+                  {!isEditingProfile && <span className="text-xs text-slate-400">View only</span>}
                 </div>
                 <div className="grid gap-2 text-sm text-slate-300">
                   <label className="flex items-center justify-between">
@@ -285,11 +301,8 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
                       type="checkbox"
                       className="h-4 w-4 accent-blue-500"
                       checked={prefsForm.emailDelay}
-                      onChange={(e) => {
-                        const next = { ...prefsForm, emailDelay: e.target.checked };
-                        setPrefsForm(next);
-                        savePreferences(next);
-                      }}
+                      disabled={!isEditingProfile}
+                      onChange={(e) => setPrefsForm((prev) => ({ ...prev, emailDelay: e.target.checked }))}
                     />
                   </label>
                   <label className="flex items-center justify-between">
@@ -298,11 +311,8 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
                       type="checkbox"
                       className="h-4 w-4 accent-blue-500"
                       checked={prefsForm.emailComplete}
-                      onChange={(e) => {
-                        const next = { ...prefsForm, emailComplete: e.target.checked };
-                        setPrefsForm(next);
-                        savePreferences(next);
-                      }}
+                      disabled={!isEditingProfile}
+                      onChange={(e) => setPrefsForm((prev) => ({ ...prev, emailComplete: e.target.checked }))}
                     />
                   </label>
                   <label className="flex items-center justify-between">
@@ -311,11 +321,8 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
                       type="checkbox"
                       className="h-4 w-4 accent-blue-500"
                       checked={prefsForm.smsDelay}
-                      onChange={(e) => {
-                        const next = { ...prefsForm, smsDelay: e.target.checked };
-                        setPrefsForm(next);
-                        savePreferences(next);
-                      }}
+                      disabled={!isEditingProfile}
+                      onChange={(e) => setPrefsForm((prev) => ({ ...prev, smsDelay: e.target.checked }))}
                     />
                   </label>
                 </div>
@@ -325,13 +332,26 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme }) => {
 
           {profileError && <p className="mt-4 text-sm text-red-400">{profileError}</p>}
 
-          <div className="mt-6 flex justify-end gap-3">
-            <button className="btn-ghost" onClick={() => setProfileOpen(false)} disabled={savingProfile}>
-              Cancel
-            </button>
-            <button className="btn-primary" onClick={saveProfile} disabled={savingProfile}>
-              {savingProfile ? "Saving..." : "Save Profile"}
-            </button>
+          <div className="mt-6 flex flex-wrap justify-end gap-3">
+            {isEditingProfile ? (
+              <>
+                <button className="btn-ghost" onClick={closeProfileModal} disabled={savingProfile}>
+                  Cancel
+                </button>
+                <button className="btn-primary" onClick={saveProfile} disabled={savingProfile}>
+                  {savingProfile ? "Saving..." : "Save Profile"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn-ghost" onClick={closeProfileModal}>
+                  Cancel
+                </button>
+                <button className="btn-primary" onClick={() => setIsEditingProfile(true)}>
+                  Edit Profile
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>,

@@ -211,13 +211,13 @@ const AdminDashboard = () => {
           <h1 className="text-3xl font-semibold">Admin Dashboard</h1>
           <p className="text-slate-400">Portfolio view across all teams</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button className="btn-ghost" onClick={() => setEmailsOpen(true)}>Emails</button>
           <button className="btn-primary" onClick={() => setOpen(true)}>Add Project</button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-4">
         <StatCard label="Projects" value={stats?.projects ?? "-"} />
         <StatCard label="Total Tasks" value={stats?.totalTasks ?? "-"} />
         <StatCard label="Delays" value={stats?.delayed ?? "-"} />
@@ -230,7 +230,7 @@ const AdminDashboard = () => {
         <Table columns={columns} data={rows} />
       </div>
 
-      <div id="reports" className="grid gap-4 md:grid-cols-2 scroll-mt-6">
+      <div id="reports" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
         <div className="card">
           <h3 className="text-lg font-semibold">Workflow Builder</h3>
           <p className="text-sm text-slate-400">Drag and reorder stages</p>
@@ -278,7 +278,7 @@ const AdminDashboard = () => {
         <CompletionChart completed={stats?.completed ?? 0} total={stats?.totalTasks ?? 0} />
       </div>
 
-      <div id="alerts" className="grid gap-4 md:grid-cols-2 scroll-mt-6">
+      <div id="alerts" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
         <DelayChart delayed={stats?.delayed ?? 0} onTime={(stats?.totalTasks ?? 0) - (stats?.delayed ?? 0)} />
         <div className="card">
           <h3 className="text-lg font-semibold">Analytics Snapshot</h3>
@@ -294,7 +294,10 @@ const AdminDashboard = () => {
       <div className="card">
         <h3 className="text-lg font-semibold">User Notification Overrides</h3>
         <p className="text-sm text-slate-400">Admin can update team preferences.</p>
-        <div className="mt-4 overflow-x-auto">
+        <div
+          className="mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
+          style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+        >
           <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
             <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
               <tr>
@@ -354,7 +357,10 @@ const AdminDashboard = () => {
       <div id="authorization" className="card scroll-mt-6">
         <h3 className="text-lg font-semibold">New User Authorization</h3>
         <p className="text-sm text-slate-400">Approve or reject pending registration requests.</p>
-        <div className="mt-4 overflow-x-auto">
+        <div
+          className="mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
+          style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+        >
           <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
             <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
               <tr>
@@ -447,7 +453,10 @@ const AdminDashboard = () => {
           <span className="text-xl text-slate-400">{sessionMonitorOpen ? "v" : ">"}</span>
         </button>
         {sessionMonitorOpen && (
-          <div className="mt-4 max-h-80 overflow-x-auto">
+          <div
+            className="mt-4 max-h-80 w-full max-w-full overflow-x-auto overflow-y-auto thin-scrollbar pb-2"
+            style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+          >
             <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
               <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
                 <tr>
@@ -508,7 +517,10 @@ const AdminDashboard = () => {
           <span className="text-xl text-slate-400">{loginActivityOpen ? "v" : ">"}</span>
         </button>
         {loginActivityOpen && (
-          <div className="mt-4 max-h-80 overflow-x-auto">
+          <div
+            className="mt-4 max-h-80 w-full max-w-full overflow-x-auto overflow-y-auto thin-scrollbar pb-2"
+            style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+          >
             <table className="min-w-[720px] w-full text-left text-xs sm:text-sm">
               <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
                 <tr>
@@ -606,7 +618,7 @@ const AdminDashboard = () => {
                 <div className="mt-3 flex justify-end">
                   <button
                     className="btn-ghost"
-                    onClick={async () => {
+                  onClick={async () => {
                       const payload = {
                         subject: templates[tpl.key]?.subject || "",
                         body: templates[tpl.key]?.body || ""

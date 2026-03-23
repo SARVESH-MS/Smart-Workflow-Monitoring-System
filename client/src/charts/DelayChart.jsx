@@ -26,7 +26,7 @@ const DelayChart = ({ delayed = 0, onTime = 0 }) => {
   return (
     <div className="card">
       <h3 className="text-lg font-semibold">Delay Overview</h3>
-      <div className="mt-4 h-40">
+      <div className="mt-4 h-32 sm:h-40">
         <Bar data={data} options={{ plugins: { legend: { display: false } } }} />
       </div>
     </div>

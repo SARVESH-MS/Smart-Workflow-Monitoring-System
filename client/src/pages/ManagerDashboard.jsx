@@ -255,7 +255,7 @@ const ManagerDashboard = () => {
           <h1 className="text-3xl font-semibold">Manager Dashboard</h1>
           <p className="text-slate-400">Team overview and task assignments</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/inbox`)}>
             Emails
             {unreadEmails > 0 && (
@@ -287,14 +287,14 @@ const ManagerDashboard = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-4">
         <StatCard label="Team Members" value={team.length} />
         <StatCard label="Active Projects" value={projects.length} />
         <StatCard label="Total Tasks" value={tasks.length} />
         <StatCard label="Time Spent" value={formatDurationHours(totalTimeSpent)} />
       </div>
 
-      <div id="team" className="grid gap-4 md:grid-cols-2 scroll-mt-6">
+      <div id="team" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
         <div className="card">
           <h3 className="text-lg font-semibold">Team Members</h3>
           <div className="mt-4 grid gap-2 text-sm">
@@ -333,7 +333,7 @@ const ManagerDashboard = () => {
               className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-[220px]">
+                <div className="min-w-0 sm:min-w-[220px]">
                   <div className="text-sm font-semibold text-slate-200">{project.name}</div>
                   <div className="mt-1 line-clamp-2 text-xs text-slate-500">
                     {project.description}
@@ -718,7 +718,7 @@ const ManagerDashboard = () => {
             const left = (offset / ganttRange.totalDays) * 100;
             const width = (duration / ganttRange.totalDays) * 100;
             return (
-              <div key={task._id} className="grid grid-cols-[180px_1fr] items-center gap-3">
+              <div key={task._id} className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center sm:gap-3">
                 <div className="text-xs text-slate-300">{task.title}</div>
                 <div className="relative h-3 rounded-full bg-slate-800">
                   <div

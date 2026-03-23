@@ -13,6 +13,7 @@ const AuthLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const navRef = useRef(null);
+  const mobileAuthRef = useRef(null);
   const [activeNav, setActiveNav] = useState("home");
   const [navHint, setNavHint] = useState({ left: false, right: false });
   const [theme, setTheme] = useState(
@@ -54,6 +55,23 @@ const AuthLayout = () => {
       window.removeEventListener("resize", syncNavHint);
     };
   }, [theme, location.pathname]);
+
+  useEffect(() => {
+    if (!showAuthPanel) return undefined;
+    const isMobile = window.innerWidth < 1024;
+    if (!isMobile) return undefined;
+
+    const scrollToAuth = () => {
+      const container = document.getElementById("landing-scroll");
+      if (!container) return;
+      container.scrollTo({ top: 0, behavior: "smooth" });
+      mobileAuthRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    };
+
+    requestAnimationFrame(scrollToAuth);
+    const timer = setTimeout(scrollToAuth, 0);
+    return () => clearTimeout(timer);
+  }, [showAuthPanel, location.pathname]);
 
   const goToSection = (key) => {
     const container = document.getElementById("landing-scroll");
@@ -178,6 +196,17 @@ const AuthLayout = () => {
             if (showAuthPanel) navigate("/home");
           }}
         >
+          {showAuthPanel && (
+            <div ref={mobileAuthRef} className="mb-6 block lg:hidden">
+              <section
+                className="landing-auth-panel card max-w-xl overflow-y-auto overscroll-contain no-scrollbar border border-slate-800/80 bg-slate-900/50"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Outlet />
+              </section>
+            </div>
+          )}
+
           <div
             id="landing-home"
             className={`mt-2 grid gap-4 transition-[padding] duration-300 ease-out ${showAuthPanel ? "lg:pr-[440px]" : ""}`}
@@ -283,7 +312,7 @@ const AuthLayout = () => {
           </div>
 
           {showAuthPanel && (
-            <div className="pointer-events-none absolute inset-0 z-30 hidden md:block">
+            <div className="pointer-events-none absolute inset-0 z-30 hidden lg:block">
               <section
                 className="landing-auth-panel pointer-events-auto card absolute right-2 top-2 max-h-[calc(100vh-130px)] w-[420px] overflow-y-auto overscroll-contain no-scrollbar border border-slate-800/80 bg-slate-900/55"
                 onClick={(e) => e.stopPropagation()}
@@ -293,16 +322,6 @@ const AuthLayout = () => {
             </div>
           )}
 
-          {showAuthPanel && (
-            <div className="mt-8 block md:hidden">
-              <section
-                className="landing-auth-panel card max-h-[72vh] max-w-xl overflow-y-auto overscroll-contain no-scrollbar border border-slate-800/80 bg-slate-900/50"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Outlet />
-              </section>
-            </div>
-          )}
         </section>
       </div>
     </AuthProvider>

@@ -24,7 +24,7 @@ const CompletionChart = ({ completed = 0, total = 0 }) => {
   return (
     <div className="card">
       <h3 className="text-lg font-semibold">Completion Rate</h3>
-      <div className="mt-4 h-40">
+      <div className="mt-4 h-32 sm:h-40">
         <Doughnut data={data} options={{ cutout: "70%" }} />
       </div>
     </div>
