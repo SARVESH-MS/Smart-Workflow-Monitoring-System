@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   getMyRoom,
@@ -18,9 +18,9 @@ const Forum = () => {
   const [room, setRoom] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const [link, setLink] = useState("");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const messageEndRef = useRef(null);
 
   const useLightChatFrames = room?.name
     ? room.name.toLowerCase().includes("team discussion")
@@ -62,10 +62,8 @@ const Forum = () => {
 
   const handleSend = async () => {
     if (!text.trim()) return;
-    const payload = link.trim() ? `${text}\n${link.trim()}`.trim() : text;
-    await sendMessage({ roomId: room._id, text: payload });
+    await sendMessage({ roomId: room._id, text: text.trim() });
     setText("");
-    setLink("");
   };
 
   const handleUpload = async () => {
@@ -103,6 +101,22 @@ const Forum = () => {
     });
   };
 
+  const formatMessageTime = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit"
+    }).format(date);
+  };
+
+  useEffect(() => {
+    if (!messages.length) return;
+    messageEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
+
   return (
     <div className={useLightChatFrames ? "card forum-light" : "card"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -137,7 +151,7 @@ const Forum = () => {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-3 max-h-[420px] overflow-auto">
+      <div className="mt-6 grid max-h-[420px] gap-3 overflow-auto">
         {messages.map((msg) => (
           <div key={msg._id} className="forum-message glass rounded-xl p-3">
             <div className="flex items-center justify-between">
@@ -145,7 +159,7 @@ const Forum = () => {
                 <span className="font-semibold">{msg.userId?.name || "User"}</span>
                 <span className="ml-2 text-xs text-slate-500">{msg.userId?.role}</span>
               </div>
-              {String(msg.userId?._id) === String(user?.id) && null}
+              <div className="text-[11px] text-slate-500">{formatMessageTime(msg.createdAt)}</div>
             </div>
             <div className="forum-message-body mt-2 text-sm text-slate-200 whitespace-pre-wrap">
               {linkify(msg.text)}
@@ -168,32 +182,21 @@ const Forum = () => {
             {msg.editedAt && <div className="forum-message-edited mt-2 text-xs text-slate-500">Edited</div>}
           </div>
         ))}
+        <div ref={messageEndRef} />
       </div>
 
       <div className="mt-4 grid gap-4">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="flex items-center justify-between">
             <label className="text-xs uppercase tracking-wide text-slate-300">Message</label>
-            <span className="text-[11px] text-slate-500">Type your text</span>
+            <span className="text-[11px] text-slate-500">Type text or paste a link</span>
           </div>
           <textarea
             className="mt-2 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm"
-            placeholder="Write a message..."
-            rows={2}
+            placeholder="Write a message or paste a link..."
+            rows={3}
             value={text}
             onChange={(e) => setText(e.target.value)}
-          />
-        </div>
-        <div className="rounded-2xl border border-slate-700 bg-slate-950/80 p-3">
-          <div className="flex items-center justify-between">
-            <label className="text-xs uppercase tracking-wide text-slate-300">Link</label>
-            <span className="text-[11px] text-slate-500">Website / Google Drive</span>
-          </div>
-          <input
-            className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-            placeholder="Paste a link"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
           />
         </div>
         <button className="btn-primary justify-self-end" onClick={handleSend}>

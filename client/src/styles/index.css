@@ -90,6 +90,34 @@ body::-webkit-scrollbar {
 
 .card {
   @apply glass min-w-0 max-w-full rounded-2xl p-5 shadow-xl;
+  position: relative;
+  overflow: hidden;
+  animation: dashboardCardIn 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease;
+  transform-origin: center;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.18);
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 0 0 rgba(96, 165, 250, 0);
+  opacity: 0.75;
+  pointer-events: none;
+  animation: dashboardCardPulse 4.6s ease-in-out infinite;
 }
 
 @media (max-width: 640px) {
@@ -101,10 +129,90 @@ body::-webkit-scrollbar {
 .dashboard-page {
   width: 100%;
   min-width: 0;
+  touch-action: pan-y;
+}
+
+.dashboard-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.dashboard-shell::before,
+.dashboard-shell::after {
+  content: "";
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(26px);
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.6;
+}
+
+.dashboard-shell::before {
+  top: 8%;
+  right: -4rem;
+  width: 16rem;
+  height: 16rem;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.26), transparent 68%);
+  animation: dashboardOrbFloatOne 14s ease-in-out infinite;
+}
+
+.dashboard-shell::after {
+  bottom: 4%;
+  left: -3rem;
+  width: 14rem;
+  height: 14rem;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.18), transparent 70%);
+  animation: dashboardOrbFloatTwo 16s ease-in-out infinite;
+}
+
+.dashboard-main-pane {
+  position: relative;
+}
+
+.dashboard-main-pane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.02), transparent 26%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 32%);
+  pointer-events: none;
+  animation: dashboardPaneGlow 10s ease-in-out infinite;
 }
 
 .dashboard-page > * {
   min-width: 0;
+  animation: dashboardSectionIn 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dashboard-page > *:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.dashboard-page > *:nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.dashboard-page > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+
+.dashboard-page > *:nth-child(4) {
+  animation-delay: 190ms;
+}
+
+.dashboard-page > *:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+.dashboard-page > *:nth-child(6) {
+  animation-delay: 290ms;
+}
+
+.dashboard-page > *:nth-child(7) {
+  animation-delay: 340ms;
 }
 
 .dashboard-page .grid {
@@ -115,9 +223,48 @@ body::-webkit-scrollbar {
   min-width: 0;
 }
 
+.table-scroll {
+  touch-action: pan-x pan-y;
+}
+
+.dashboard-chart,
+.dashboard-chart canvas {
+  touch-action: pan-y !important;
+}
+
 .sidebar-shell .card {
   box-shadow: none;
 }
+
+.sidebar-shell {
+  animation: dashboardSidebarIn 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-shell .card {
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.sidebar-shell .card:hover {
+  transform: translateX(6px);
+  box-shadow: none;
+}
+
+.sidebar-shell .grid > * {
+  animation: dashboardNavItemIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-shell .grid > *:nth-child(1) { animation-delay: 80ms; }
+.sidebar-shell .grid > *:nth-child(2) { animation-delay: 120ms; }
+.sidebar-shell .grid > *:nth-child(3) { animation-delay: 160ms; }
+.sidebar-shell .grid > *:nth-child(4) { animation-delay: 200ms; }
+.sidebar-shell .grid > *:nth-child(5) { animation-delay: 240ms; }
+.sidebar-shell .grid > *:nth-child(6) { animation-delay: 280ms; }
+.sidebar-shell .grid > *:nth-child(7) { animation-delay: 320ms; }
+.sidebar-shell .grid > *:nth-child(8) { animation-delay: 360ms; }
 
 .dashboard-theme-light .sidebar-shell .card {
   background: transparent !important;
@@ -130,6 +277,21 @@ body::-webkit-scrollbar {
 
 .btn {
   @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.985);
 }
 
 .btn-primary {
@@ -138,6 +300,162 @@ body::-webkit-scrollbar {
 
 .btn-ghost {
   @apply btn border border-slate-700 text-slate-200 hover:border-slate-500;
+}
+
+.mobile-menu-btn {
+  position: relative;
+  display: inline-flex;
+  height: 3rem;
+  width: 3rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background:
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.28), transparent 58%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.82));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 24px rgba(2, 6, 23, 0.34);
+}
+
+.mobile-menu-btn::after {
+  content: "";
+  position: absolute;
+  right: 0.45rem;
+  top: 0.45rem;
+  height: 0.38rem;
+  width: 0.38rem;
+  border-radius: 999px;
+  background: #60a5fa;
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.9);
+}
+
+.mobile-menu-icon {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.26rem;
+}
+
+.mobile-menu-icon span {
+  display: block;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f8fafc, #93c5fd);
+  box-shadow: 0 0 10px rgba(147, 197, 253, 0.28);
+}
+
+.mobile-menu-icon span:nth-child(1) {
+  width: 1.15rem;
+}
+
+.mobile-menu-icon span:nth-child(2) {
+  width: 0.9rem;
+}
+
+.mobile-menu-icon span:nth-child(3) {
+  width: 1.15rem;
+}
+
+.mobile-dashboard-topbar {
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 1.1rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(14px);
+  padding: 0.85rem 1rem;
+  animation: dashboardTopbarIn 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mobile-dashboard-topbar::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  opacity: 0.7;
+  pointer-events: none;
+  animation: dashboardTopbarPulse 4.8s ease-in-out infinite;
+}
+
+.mobile-dashboard-brand {
+  color: #111827;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.mobile-topbar-menu-btn {
+  display: inline-flex;
+  height: 2.6rem;
+  width: 2.6rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.9rem;
+  color: #111827;
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.mobile-topbar-menu-btn:hover {
+  transform: translateY(-1px) scale(1.03);
+}
+
+.mobile-topbar-menu-btn:active {
+  transform: scale(0.96);
+}
+
+.dashboard-mobile-drawer {
+  box-shadow: 18px 0 44px rgba(2, 6, 23, 0.42);
+}
+
+.dashboard-mobile-drawer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.08), transparent 22%, transparent 78%, rgba(14, 165, 233, 0.06));
+  pointer-events: none;
+}
+
+.mobile-topbar-menu-icon {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.mobile-topbar-menu-icon span {
+  display: block;
+  width: 1.45rem;
+  height: 3px;
+  border-radius: 999px;
+  background: #111827;
+}
+
+.mobile-topbar-menu-icon span:nth-child(2) {
+  width: 1.1rem;
+}
+
+.dashboard-theme-light .mobile-menu-btn {
+  border-color: #cbd5e1;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 10px 24px rgba(148, 163, 184, 0.22);
+}
+
+.dashboard-theme-light .mobile-menu-icon span {
+  background: linear-gradient(90deg, #0f172a, #2563eb);
+  box-shadow: none;
+}
+
+.dashboard-stat-value {
+  animation: dashboardValuePop 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: left center;
+  text-shadow: 0 0 18px rgba(96, 165, 250, 0.12);
 }
 
 .auth-field {
@@ -543,6 +861,172 @@ body::-webkit-scrollbar {
   }
   50% {
     background-position: 100% 50%;
+  }
+}
+
+@keyframes dashboardSectionIn {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dashboardCardIn {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dashboardSidebarIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes dashboardTopbarIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dashboardValuePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(4px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.035);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes dashboardNavItemIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes dashboardCardPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+      0 0 0 rgba(96, 165, 250, 0);
+  }
+  50% {
+    opacity: 0.92;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+      0 0 18px rgba(96, 165, 250, 0.12);
+  }
+}
+
+@keyframes dashboardTopbarPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.01);
+  }
+}
+
+@keyframes dashboardOrbFloatOne {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-24px, 18px, 0) scale(1.08);
+  }
+}
+
+@keyframes dashboardOrbFloatTwo {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(22px, -14px, 0) scale(1.06);
+  }
+}
+
+@keyframes dashboardPaneGlow {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-shell::before,
+  .dashboard-shell::after,
+  .dashboard-main-pane::before,
+  .card::after,
+  .mobile-dashboard-topbar::before,
+  .dashboard-mobile-drawer::after {
+    animation: none !important;
+  }
+
+  .card,
+  .dashboard-page > *,
+  .sidebar-shell,
+  .mobile-dashboard-topbar,
+  .dashboard-stat-value {
+    animation: none !important;
+  }
+
+  .card,
+  .btn,
+  .sidebar-shell .card,
+  .mobile-topbar-menu-btn {
+    transition: none !important;
+  }
+
+  .card:hover,
+  .sidebar-shell .card:hover,
+  .btn:hover,
+  .btn:active,
+  .mobile-topbar-menu-btn:hover,
+  .mobile-topbar-menu-btn:active {
+    transform: none !important;
   }
 }
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import Task from "../models/Task.js";
 import User from "../models/User.js";
-import { sendEmail } from "../services/emailService.js";
+import Notification from "../models/Notification.js";
 
 const digestSchema = z.object({
   role: z.enum(["admin", "manager", "employee"]),
@@ -13,17 +13,31 @@ export const sendDigest = async (req, res) => {
   const users = await User.find({ role: payload.role });
   const tasks = await Task.find({});
 
-  const summary = `Total tasks: ${tasks.length}, Completed: ${tasks.filter((t) => t.status === "done").length}`;
+  const completed = tasks.filter((t) => t.status === "done").length;
+  const delayed = tasks.filter((t) => t.isDelayed).length;
+  const summary = `Total tasks: ${tasks.length}, Completed: ${completed}, Delayed: ${delayed}`;
 
-  await Promise.all(
-    users.map((u) =>
-      sendEmail({
-        to: u.email,
-        subject: `SWMS ${payload.frequency || "daily"} digest`,
-        html: `<div><h3>Digest</h3><p>${summary}</p></div>`
+  if (users.length === 0) {
+    return res.json({ sent: 0, failed: 0, recipients: 0 });
+  }
+
+  const created = await Promise.all(
+    users.map((user) =>
+      Notification.create({
+        userId: user._id,
+        type: "digest.summary",
+        title: `SWMS ${payload.frequency || "daily"} digest`,
+        message: summary
       }).catch(() => null)
     )
   );
 
-  res.json({ sent: users.length });
+  const sent = created.filter(Boolean).length;
+  const failed = created.length - sent;
+
+  res.json({
+    sent,
+    failed,
+    recipients: users.length
+  });
 };

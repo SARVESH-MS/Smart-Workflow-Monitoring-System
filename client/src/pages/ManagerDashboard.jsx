@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { listProjects } from "../api/projects.js";
 import { listTasks, createTask, updateTask } from "../api/tasks.js";
@@ -57,6 +57,10 @@ const ManagerDashboard = () => {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadForum, setUnreadForum] = useState(0);
   const [forumSender, setForumSender] = useState("");
+  const [draggedTaskId, setDraggedTaskId] = useState("");
+  const [dragHoverStage, setDragHoverStage] = useState("");
+  const [touchDragCard, setTouchDragCard] = useState(null);
+  const touchDragRef = useRef(null);
   const [form, setForm] = useState({
     projectId: "",
     userId: "",
@@ -202,6 +206,16 @@ const ManagerDashboard = () => {
     };
   });
 
+  const getEntityId = (value) => {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "object" && value._id) return String(value._id);
+    return String(value);
+  };
+
+  const sameStage = (left, right) =>
+    String(left || "Planning").trim().toLowerCase() === String(right || "Planning").trim().toLowerCase();
+
   const selectedProject = projects.find((p) => p._id === selectedProjectId);
   const kanbanStages = selectedProject?.workflow || [
     "Planning",
@@ -210,12 +224,76 @@ const ManagerDashboard = () => {
     "Testing",
     "Done"
   ];
-  const projectTasks = tasks.filter((t) => t.projectId === selectedProjectId);
+  const projectTasks = tasks.filter((t) => getEntityId(t.projectId) === selectedProjectId);
 
-  const handleDrop = async (taskId, stage) => {
+  const resetKanbanDrag = () => {
+    setDraggedTaskId("");
+    setDragHoverStage("");
+    setTouchDragCard(null);
+    touchDragRef.current = null;
+  };
+
+  const handleStageMove = async (taskId, stage) => {
+    if (!taskId || !stage) {
+      resetKanbanDrag();
+      return;
+    }
     await updateTask(taskId, { stage });
+    resetKanbanDrag();
     loadOverview();
   };
+
+  useEffect(() => {
+    if (!touchDragCard) return undefined;
+
+    const updateHoverStage = (clientX, clientY) => {
+      const target = document.elementFromPoint(clientX, clientY);
+      const stageElement = target?.closest?.("[data-kanban-stage]");
+      setDragHoverStage(stageElement?.dataset?.kanbanStage || "");
+      return stageElement?.dataset?.kanbanStage || "";
+    };
+
+    const handleTouchMove = (event) => {
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      event.preventDefault();
+      setTouchDragCard((prev) =>
+        prev
+          ? {
+              ...prev,
+              x: touch.clientX,
+              y: touch.clientY
+            }
+          : prev
+      );
+      updateHoverStage(touch.clientX, touch.clientY);
+    };
+
+    const handleTouchEnd = async (event) => {
+      const touch = event.changedTouches?.[0];
+      const taskId = touchDragRef.current?.taskId;
+      const nextStage = touch ? updateHoverStage(touch.clientX, touch.clientY) : "";
+      if (taskId && nextStage) {
+        await handleStageMove(taskId, nextStage);
+        return;
+      }
+      resetKanbanDrag();
+    };
+
+    const handleTouchCancel = () => {
+      resetKanbanDrag();
+    };
+
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd, { passive: false });
+    window.addEventListener("touchcancel", handleTouchCancel, { passive: false });
+
+    return () => {
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
+    };
+  }, [touchDragCard]);
 
   const ganttTasks = projectTasks.map((task) => {
     const start = task.startTime ? dayjs(task.startTime) : dayjs(task.createdAt);
@@ -255,39 +333,39 @@ const ManagerDashboard = () => {
           <h1 className="text-3xl font-semibold">Manager Dashboard</h1>
           <p className="text-slate-400">Team overview and task assignments</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/inbox`)}>
+        <div className="flex items-center gap-2 overflow-x-auto overflow-y-visible pt-3 no-scrollbar sm:flex-wrap">
+          <button className="btn-ghost relative shrink-0" onClick={() => navigate(`/manager/${id}/inbox`)}>
             Emails
             {unreadEmails > 0 && (
-              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+              <span className="absolute -top-2.5 right-1 z-10 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-md">
                 {unreadEmails}
               </span>
             )}
           </button>
-          <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/notifications`)}>
+          <button className="btn-ghost relative shrink-0" onClick={() => navigate(`/manager/${id}/notifications`)}>
             Notifications
             {unreadNotifications > 0 && (
-              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+              <span className="absolute -top-2.5 right-1 z-10 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-md">
                 {unreadNotifications}
               </span>
             )}
           </button>
-          <button className="btn-ghost relative" onClick={() => navigate(`/manager/${id}/forum`)}>
+          <button className="btn-ghost relative shrink-0" onClick={() => navigate(`/manager/${id}/forum`)}>
             Team Discussion
             {unreadForum > 0 && (
-              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+              <span className="absolute -top-2.5 right-1 z-10 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-md">
                 {unreadForum}
               </span>
             )}
           </button>
           {unreadForum > 0 && forumSender && (
-            <span className="text-xs text-amber-300">New from {forumSender}</span>
+            <span className="shrink-0 text-xs text-amber-300">New from {forumSender}</span>
           )}
-          <button className="btn-primary" onClick={() => setOpen(true)}>Assign Task</button>
+          <button className="btn-primary shrink-0" onClick={() => setOpen(true)}>Assign Task</button>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Team Members" value={team.length} />
         <StatCard label="Active Projects" value={projects.length} />
         <StatCard label="Total Tasks" value={tasks.length} />
@@ -493,32 +571,82 @@ const ManagerDashboard = () => {
           {kanbanStages.map((stage) => (
             <div
               key={stage}
-              className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"
-              onDragOver={(e) => e.preventDefault()}
+              data-kanban-stage={stage}
+              className={`rounded-xl border bg-slate-950/50 p-3 transition ${
+                dragHoverStage === stage
+                  ? "border-brand-400 ring-2 ring-brand-500/20"
+                  : "border-slate-800"
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragHoverStage(stage);
+              }}
+              onDragLeave={() => {
+                setDragHoverStage((current) => (current === stage ? "" : current));
+              }}
               onDrop={(e) => {
                 const taskId = e.dataTransfer.getData("text/plain");
-                if (taskId) handleDrop(taskId, stage);
+                if (taskId) {
+                  void handleStageMove(taskId, stage);
+                } else {
+                  resetKanbanDrag();
+                }
               }}
             >
               <div className="text-xs uppercase text-slate-400">{stage}</div>
               <div className="mt-3 grid gap-2">
                 {projectTasks
-                  .filter((t) => (t.stage || "Planning") === stage)
+                  .filter((t) => sameStage(t.stage, stage))
                   .map((task) => (
                     <div
                       key={task._id}
                       draggable
-                      onDragStart={(e) => e.dataTransfer.setData("text/plain", task._id)}
-                      className="rounded-lg bg-slate-900 p-2 text-xs text-slate-200"
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", task._id);
+                        setDraggedTaskId(task._id);
+                      }}
+                      onDragEnd={resetKanbanDrag}
+                      onTouchStart={(e) => {
+                        const touch = e.touches?.[0];
+                        if (!touch) return;
+                        touchDragRef.current = { taskId: task._id };
+                        setDraggedTaskId(task._id);
+                        setTouchDragCard({
+                          taskId: task._id,
+                          title: task.title,
+                          roleContribution: task.roleContribution,
+                          x: touch.clientX,
+                          y: touch.clientY
+                        });
+                      }}
+                      className={`rounded-lg bg-slate-900 p-2 text-xs text-slate-200 transition ${
+                        draggedTaskId === task._id ? "opacity-60 ring-2 ring-brand-500/30" : ""
+                      }`}
                     >
                       <div className="font-semibold">{task.title}</div>
                       <div className="text-[11px] text-slate-400">{task.roleContribution}</div>
                     </div>
                   ))}
+                {projectTasks.filter((t) => sameStage(t.stage, stage)).length === 0 && (
+                  <div className="rounded-lg border border-dashed border-slate-700 px-3 py-4 text-center text-[11px] text-slate-500">
+                    No tasks in this stage
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
+        {touchDragCard && (
+          <div
+            className="pointer-events-none fixed z-[100] w-52 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-brand-500/50 bg-slate-950/95 p-3 shadow-2xl"
+            style={{ left: `${touchDragCard.x}px`, top: `${touchDragCard.y}px` }}
+          >
+            <div className="text-xs font-semibold text-slate-100">{touchDragCard.title}</div>
+            <div className="mt-1 text-[11px] text-slate-400">
+              {touchDragCard.roleContribution || "Drag to another stage"}
+            </div>
+          </div>
+        )}
       </div>
 
       <div id="templates" className="card scroll-mt-6">

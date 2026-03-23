@@ -121,33 +121,33 @@ const EmployeeDashboard = () => {
             <h1 className="text-3xl font-semibold">Employee Dashboard</h1>
             <p className="text-slate-400">Track your tasks and time</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-          <button className="btn-ghost relative" onClick={() => navigate(`/employee/${id}/inbox`)}>
+          <div className="flex items-center gap-2 overflow-x-auto overflow-y-visible pt-3 no-scrollbar sm:flex-wrap">
+          <button className="btn-ghost relative shrink-0" onClick={() => navigate(`/employee/${id}/inbox`)}>
             Emails
             {unreadEmails > 0 && (
-              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+              <span className="absolute -top-2.5 right-1 z-10 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-md">
                 {unreadEmails}
               </span>
             )}
           </button>
-          <button className="btn-ghost relative" onClick={() => navigate(`/employee/${id}/notifications`)}>
+          <button className="btn-ghost relative shrink-0" onClick={() => navigate(`/employee/${id}/notifications`)}>
             Notifications
             {unreadNotifications > 0 && (
-              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+              <span className="absolute -top-2.5 right-1 z-10 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-md">
                 {unreadNotifications}
               </span>
             )}
           </button>
-          <button className="btn-ghost relative" onClick={() => navigate(`/employee/${id}/forum`)}>
+          <button className="btn-ghost relative shrink-0" onClick={() => navigate(`/employee/${id}/forum`)}>
             Team Discussion
             {unreadForum > 0 && (
-              <span className="absolute -top-2 -right-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs text-white">
+              <span className="absolute -top-2.5 right-1 z-10 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-md">
                 {unreadForum}
               </span>
             )}
           </button>
           {unreadForum > 0 && forumSender && (
-            <span className="text-xs text-amber-300">New from {forumSender}</span>
+            <span className="shrink-0 text-xs text-amber-300">New from {forumSender}</span>
           )}
           </div>
         </div>
@@ -164,7 +164,7 @@ const EmployeeDashboard = () => {
       </div>
     </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Assigned Tasks" value={tasks.length} />
         <StatCard label="Active Task" value={active?.title || "None"} />
         <StatCard label="Delayed" value={tasks.filter((t) => t.isDelayed).length} />
@@ -195,8 +195,8 @@ const EmployeeDashboard = () => {
 
       <div id="tasks" className="card min-w-0 scroll-mt-6">
         <div
-          className="w-full overflow-x-auto overflow-y-hidden thin-scrollbar"
-          style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+          className="table-scroll w-full overflow-x-auto overflow-y-hidden thin-scrollbar"
+          style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
         >
         <table className="min-w-[560px] w-full text-left text-sm sm:min-w-[640px]">
           <thead className="text-xs uppercase text-slate-400">

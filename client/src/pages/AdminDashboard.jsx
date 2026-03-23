@@ -217,7 +217,7 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Projects" value={stats?.projects ?? "-"} />
         <StatCard label="Total Tasks" value={stats?.totalTasks ?? "-"} />
         <StatCard label="Delays" value={stats?.delayed ?? "-"} />
@@ -295,8 +295,8 @@ const AdminDashboard = () => {
         <h3 className="text-lg font-semibold">User Notification Overrides</h3>
         <p className="text-sm text-slate-400">Admin can update team preferences.</p>
         <div
-          className="mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
-          style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+          className="table-scroll mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
+          style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
         >
           <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
             <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
@@ -358,8 +358,8 @@ const AdminDashboard = () => {
         <h3 className="text-lg font-semibold">New User Authorization</h3>
         <p className="text-sm text-slate-400">Approve or reject pending registration requests.</p>
         <div
-          className="mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
-          style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+          className="table-scroll mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
+          style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
         >
           <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
             <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
@@ -454,8 +454,8 @@ const AdminDashboard = () => {
         </button>
         {sessionMonitorOpen && (
           <div
-            className="mt-4 max-h-80 w-full max-w-full overflow-x-auto overflow-y-auto thin-scrollbar pb-2"
-            style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+            className="table-scroll mt-4 max-h-80 w-full max-w-full overflow-x-auto overflow-y-auto thin-scrollbar pb-2"
+            style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
           >
             <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
               <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
@@ -518,8 +518,8 @@ const AdminDashboard = () => {
         </button>
         {loginActivityOpen && (
           <div
-            className="mt-4 max-h-80 w-full max-w-full overflow-x-auto overflow-y-auto thin-scrollbar pb-2"
-            style={{ touchAction: "pan-x", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+            className="table-scroll mt-4 max-h-80 w-full max-w-full overflow-x-auto overflow-y-auto thin-scrollbar pb-2"
+            style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
           >
             <table className="min-w-[720px] w-full text-left text-xs sm:text-sm">
               <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
