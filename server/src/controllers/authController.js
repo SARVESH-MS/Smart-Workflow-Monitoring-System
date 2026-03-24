@@ -277,6 +277,7 @@ export const me = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
+  req.app.get("io")?.markSessionExplicitLogout?.(req.user.id, getRequestMeta(req).sessionId);
   await logAudit({
     actorId: req.user.id,
     action: "auth.logout",

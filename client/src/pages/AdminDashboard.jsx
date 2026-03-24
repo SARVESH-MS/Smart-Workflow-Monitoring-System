@@ -22,6 +22,21 @@ import { listEmailLogs } from "../api/emails.js";
 import GlobalSearch from "../components/GlobalSearch.jsx";
 import DigestSender from "../components/DigestSender.jsx";
 
+const DisclosureIcon = ({ open }) => (
+  <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center" aria-hidden="true">
+    <svg
+      viewBox="0 0 64 64"
+      className={`h-10 w-10 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      fill="none"
+    >
+      <rect x="9" y="9" width="46" height="46" rx="12" fill="#11181d" stroke="#11181d" strokeWidth="1.5" />
+      <rect x="6" y="6" width="52" height="52" rx="15" stroke="#f8fafc" strokeWidth="2.4" />
+      <rect x="8.5" y="8.5" width="47" height="47" rx="13" stroke="#0f172a" strokeWidth="1.4" opacity="0.75" />
+      <path d="M32 40 19 26h26L32 40Z" fill="#f8fafc" />
+    </svg>
+  </span>
+);
+
 const AdminDashboard = () => {
   const defaultWorkflow = ["Planning", "Design", "Development", "Testing", "Done"];
   const [projects, setProjects] = useState([]);
@@ -515,7 +530,7 @@ const AdminDashboard = () => {
             <h3 className="text-lg font-semibold">Session Monitor</h3>
             <p className="text-sm text-slate-400">Track who is online, login time, and last seen.</p>
           </div>
-          <span className="text-xl text-slate-400">{sessionMonitorOpen ? "v" : ">"}</span>
+          <DisclosureIcon open={sessionMonitorOpen} />
         </button>
         {sessionMonitorOpen && (
           <div
@@ -579,7 +594,7 @@ const AdminDashboard = () => {
             <h3 className="text-lg font-semibold">Manager & Employee Login Activity</h3>
             <p className="text-sm text-slate-400">Tracks login/logout time with role and device details.</p>
           </div>
-          <span className="text-xl text-slate-400">{loginActivityOpen ? "v" : ">"}</span>
+          <DisclosureIcon open={loginActivityOpen} />
         </button>
         {loginActivityOpen && (
           <div
@@ -643,7 +658,7 @@ const AdminDashboard = () => {
             <h3 className="text-lg font-semibold">Notification Templates</h3>
             <p className="text-sm text-slate-400">Edit email/Slack templates.</p>
           </div>
-          <span className="text-xl text-slate-400">{templatesOpen ? "v" : ">"}</span>
+          <DisclosureIcon open={templatesOpen} />
         </button>
         {templatesOpen && (
           <div className="mt-4 grid gap-4">

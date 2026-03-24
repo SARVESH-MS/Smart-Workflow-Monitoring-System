@@ -4,6 +4,9 @@ const firstHeaderValue = (value) => {
   return String(value).split(",")[0].trim();
 };
 
+export const getSessionId = (req) =>
+  firstHeaderValue(req.headers["x-session-id"] || req.headers["x-swms-session-id"]);
+
 export const getClientIp = (req) => {
   const forwardedIp = firstHeaderValue(req.headers["x-forwarded-for"]);
   const realIp = firstHeaderValue(req.headers["x-real-ip"]);
@@ -47,5 +50,6 @@ export const getDeviceName = (req) => {
 export const getRequestMeta = (req) => ({
   ip: getClientIp(req),
   ua: String(req.headers["user-agent"] || "-"),
-  deviceName: getDeviceName(req)
+  deviceName: getDeviceName(req),
+  sessionId: getSessionId(req) || ""
 });
