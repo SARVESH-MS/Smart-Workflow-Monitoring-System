@@ -285,7 +285,7 @@ export const SidebarProfilePanel = ({
           {compact && showThemeToggle && (
             <button
               type="button"
-              className="btn-ghost h-10 w-10 rounded-xl p-0 overflow-visible"
+              className="grid h-11 w-11 place-items-center rounded-xl border border-slate-700 bg-slate-900/60 shadow-sm backdrop-blur transition-transform duration-150 active:scale-95"
               onClick={onToggleTheme}
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -293,7 +293,7 @@ export const SidebarProfilePanel = ({
               <img
                 src={theme === "dark" ? LIGHT_MODE_IMAGE : DARK_MODE_IMAGE}
                 alt={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                className="h-10 w-10 rounded-xl"
+                className="h-5 w-5"
               />
             </button>
           )}
@@ -471,7 +471,7 @@ export const SidebarProfilePanel = ({
   );
 };
 
-const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme, showHeader = true }) => {
+const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme, showHeader = true, onNavigate }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -498,13 +498,26 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme, showHea
       <div className={`${showHeader ? "mt-6" : "mt-0"} flex h-auto min-h-0 flex-col overflow-visible pr-1 lg:flex-1 lg:overflow-y-auto lg:thin-scrollbar`}>
         <div className="grid gap-3 text-sm text-slate-300">
           {(menuSections[user?.role] || []).map((item) => (
-            <button key={item.id} className={sidebarButtonClassName} onClick={() => goTo(item.id)}>
+            <button
+              key={item.id}
+              className={sidebarButtonClassName}
+              onClick={() => {
+                goTo(item.id);
+                onNavigate?.();
+              }}
+            >
               <SidebarIcon>{item.icon}</SidebarIcon>
               <span className="min-w-0 leading-snug">{item.label}</span>
             </button>
           ))}
         </div>
-        <button className="btn-ghost mt-6 flex w-full items-center justify-center gap-3" onClick={onLogout}>
+        <button
+          className="btn-ghost mt-6 flex w-full items-center justify-center gap-3"
+          onClick={() => {
+            onLogout?.();
+            onNavigate?.();
+          }}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
             <path d="M10 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
             <path d="M14 7l5 5-5 5" />

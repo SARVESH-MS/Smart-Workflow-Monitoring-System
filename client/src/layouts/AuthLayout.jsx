@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider } from "../utils/AuthContext.jsx";
 
@@ -19,8 +19,25 @@ const AuthLayout = () => {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("swms_theme") || localStorage.getItem("swms_auth_theme") || "dark"
   );
-  const showAuthPanel =
-    location.pathname === "/register" || location.pathname.startsWith("/login");
+
+  const isAuthPath = (pathname) => pathname === "/register" || pathname.startsWith("/login");
+  const initialAuthPathRef = useRef(isAuthPath(location.pathname));
+  const [initialRedirecting, setInitialRedirecting] = useState(initialAuthPathRef.current);
+  const showAuthPanel = !initialRedirecting && isAuthPath(location.pathname);
+
+  // Prevent the app from "starting" in the auth panel after a refresh/deep-link.
+  // useLayoutEffect runs before paint to avoid a visible flash of the panel.
+  useLayoutEffect(() => {
+    if (!initialAuthPathRef.current) return;
+    navigate("/home", { replace: true });
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!initialRedirecting) return;
+    if (!isAuthPath(location.pathname)) {
+      setInitialRedirecting(false);
+    }
+  }, [initialRedirecting, location.pathname]);
 
   useEffect(() => {
     localStorage.setItem("swms_theme", theme);
@@ -119,7 +136,7 @@ const AuthLayout = () => {
   return (
     <AuthProvider>
       <div className={`landing-shell flex h-screen flex-col overflow-hidden p-2 lg:p-3 ${theme === "light" ? "auth-theme-light" : "auth-theme-dark"}`}>
-        <header className="landing-topbar card relative z-40 mb-2 flex min-h-[84px] flex-col gap-3 py-3 lg:h-[84px] lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-4 lg:py-4">
+        <header className="landing-topbar card relative z-40 mb-2 flex min-h-[84px] flex-col gap-3 overflow-hidden py-3 lg:h-[84px] lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:py-4">
           <div className="landing-logo-box flex items-center rounded-lg px-2 py-1">
             {theme === "dark" ? (
               <img src={SWMS_LOGO} alt="SWMS" className="h-11 w-auto" />
@@ -130,7 +147,7 @@ const AuthLayout = () => {
           <div className="relative w-full lg:w-auto">
             <nav
               ref={navRef}
-              className="flex w-full items-center gap-2 overflow-x-auto no-scrollbar pr-12 text-xs lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible lg:pr-0"
+              className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar pr-12 text-xs lg:w-auto lg:justify-end lg:overflow-visible lg:pr-0"
             >
               {["home", "features", "modules", "contact"].map((item) => (
                 <button
@@ -199,7 +216,7 @@ const AuthLayout = () => {
           {showAuthPanel && (
             <div ref={mobileAuthRef} className="mb-6 block lg:hidden">
               <section
-                className="landing-auth-panel card max-w-xl overflow-y-auto overscroll-contain no-scrollbar border border-slate-800/80 bg-slate-900/50"
+                className="landing-auth-panel card max-w-xl overflow-y-auto no-scrollbar border border-slate-800/80 bg-slate-900/50"
                 onClick={(e) => e.stopPropagation()}
               >
                 <Outlet />
@@ -314,7 +331,7 @@ const AuthLayout = () => {
           {showAuthPanel && (
             <div className="pointer-events-none absolute inset-0 z-30 hidden lg:block">
               <section
-                className="landing-auth-panel pointer-events-auto card absolute right-2 top-2 max-h-[calc(100vh-130px)] w-[420px] overflow-y-auto overscroll-contain no-scrollbar border border-slate-800/80 bg-slate-900/55"
+                className="landing-auth-panel pointer-events-auto card absolute right-2 top-2 max-h-[calc(100vh-96px)] w-[420px] overflow-y-auto no-scrollbar border border-slate-800/80 bg-slate-900/55"
                 onClick={(e) => e.stopPropagation()}
               >
                 <Outlet />

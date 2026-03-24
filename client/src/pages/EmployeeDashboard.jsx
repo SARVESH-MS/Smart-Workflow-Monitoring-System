@@ -265,10 +265,14 @@ const EmployeeDashboard = () => {
         <CompletionChart
           completed={tasks.filter((t) => t.status === "done").length}
           total={tasks.length}
+          completedTasks={tasks.filter((t) => t.status === "done")}
+          remainingTasks={tasks.filter((t) => t.status !== "done")}
         />
         <DelayChart
           delayed={tasks.filter((t) => t.isDelayed).length}
           onTime={tasks.filter((t) => !t.isDelayed).length}
+          delayedTasks={tasks.filter((t) => t.isDelayed)}
+          onTimeTasks={tasks.filter((t) => !t.isDelayed)}
         />
       </div>
 

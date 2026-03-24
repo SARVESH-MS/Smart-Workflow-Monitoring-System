@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../utils/AuthContext.jsx";
 import Sidebar, { SidebarProfilePanel } from "../components/Sidebar.jsx";
@@ -7,10 +7,12 @@ import useMobileMenuSwipe from "../utils/useMobileMenuSwipe.js";
 const AdminLayout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const topbarRef = useRef(null);
   const [theme, setTheme] = useState(
     () => localStorage.getItem("swms_theme") || localStorage.getItem("swms_dashboard_theme") || "dark"
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [drawerTop, setDrawerTop] = useState(92);
 
   useEffect(() => {
     localStorage.setItem("swms_theme", theme);
@@ -18,11 +20,31 @@ const AdminLayout = () => {
   }, [theme]);
 
   useEffect(() => {
+    const update = () => {
+      const el = topbarRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      // Small gap below the topbar so the drawer doesn't touch it.
+      setDrawerTop(Math.max(Math.round(rect.bottom + 10), 0));
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
     if (!sidebarOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.classList.add("swms-drawer-open");
+    document.documentElement.classList.add("swms-drawer-open");
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("swms-drawer-open");
+      document.documentElement.classList.remove("swms-drawer-open");
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
     };
   }, [sidebarOpen]);
 
@@ -40,11 +62,18 @@ const AdminLayout = () => {
       </main>
 
       <div
-        className={`mobile-dashboard-topbar fixed left-3 right-3 top-3 z-20 sm:hidden transition-opacity ${sidebarOpen ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        ref={topbarRef}
+        className="mobile-dashboard-topbar fixed left-3 right-3 top-3 z-20 sm:hidden"
       >
         <div className="flex items-center gap-3">
           <div {...swipeHandlers}>
-            <button className="mobile-topbar-menu-btn" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open menu" title="Open menu">
+            <button
+              className="mobile-topbar-menu-btn"
+              type="button"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+              title={sidebarOpen ? "Close menu" : "Open menu"}
+            >
               <span className="mobile-topbar-menu-icon" aria-hidden="true">
                 <span />
                 <span />
@@ -61,7 +90,6 @@ const AdminLayout = () => {
             onToggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
             compact
             showTitle={false}
-            showThemeToggle={false}
             showViewProfileLink={false}
           />
         </div>
@@ -86,17 +114,18 @@ const AdminLayout = () => {
       </div>
 
       <div
-        className={`lg:hidden fixed inset-0 z-30 overflow-hidden ${sidebarOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+        className={`lg:hidden fixed left-0 right-0 bottom-0 z-30 overflow-hidden ${sidebarOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+        style={{ top: `${drawerTop}px` }}
         aria-hidden={!sidebarOpen}
       >
         <button
           type="button"
-          className={`absolute inset-0 bg-black/40 transition-opacity ${sidebarOpen ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ease-out ${sidebarOpen ? "opacity-100" : "opacity-0"}`}
           onClick={() => setSidebarOpen(false)}
           aria-label="Close menu"
         />
         <div
-          className={`dashboard-mobile-drawer absolute left-0 top-0 h-full w-[74vw] max-w-[280px] bg-slate-950/80 backdrop-blur transition-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`dashboard-mobile-drawer absolute left-0 top-0 h-full w-[74vw] max-w-[280px] bg-slate-950/80 backdrop-blur transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
         >
           <div className="h-full overflow-y-auto thin-scrollbar">
             <Sidebar
@@ -110,6 +139,7 @@ const AdminLayout = () => {
               theme={theme}
               onToggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
               showHeader={false}
+              onNavigate={() => setSidebarOpen(false)}
               onLogout={() => {
                 setSidebarOpen(false);
                 logout();

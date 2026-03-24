@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { listProjects, createProject, updateProject } from "../api/projects.js";
 import { summary } from "../api/analytics.js";
+import { listTasks } from "../api/tasks.js";
 import StatCard from "../components/StatCard.jsx";
 import Table from "../components/Table.jsx";
 import Modal from "../components/Modal.jsx";
@@ -25,6 +26,8 @@ const AdminDashboard = () => {
   const defaultWorkflow = ["Planning", "Design", "Development", "Testing", "Done"];
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
+  const [chartTaskLists, setChartTaskLists] = useState(null);
+  const chartTaskPromiseRef = useRef(null);
   const [users, setUsers] = useState([]);
   const [managers, setManagers] = useState([]);
   const [registrationRequests, setRegistrationRequests] = useState([]);
@@ -66,9 +69,14 @@ const AdminDashboard = () => {
   };
 
   const loadOverview = async () => {
-    const [projectsData, statsData] = await Promise.all([listProjects(), summary()]);
+    const [projectsData, statsData] = await Promise.all([
+      listProjects(),
+      summary()
+    ]);
     setProjects(projectsData);
     setStats(statsData);
+    // Invalidate cached task lists so graphs can re-fetch when needed.
+    setChartTaskLists(null);
   };
 
   const loadUsersAndRequests = async () => {
@@ -122,6 +130,7 @@ const AdminDashboard = () => {
   }, []);
   useEffect(() => {
     const socket = createSocket();
+    socket.on("task:created", loadOverview);
     socket.on("project:created", loadOverview);
     socket.on("project:updated", loadOverview);
     socket.on("task:updated", loadOverview);
@@ -189,6 +198,44 @@ const AdminDashboard = () => {
     )
   }));
   const onlineSessions = sessionMonitor.filter((item) => item.isOnline);
+
+  const ensureChartTaskLists = async () => {
+    if (chartTaskLists) return chartTaskLists;
+    if (chartTaskPromiseRef.current) return chartTaskPromiseRef.current;
+
+    chartTaskPromiseRef.current = (async () => {
+      const [projectsData, tasksData] = await Promise.all([
+        projects.length ? Promise.resolve(projects) : listProjects(),
+        listTasks({ compact: 1, limit: 2000 })
+      ]);
+
+      const projectNameById = projectsData.reduce((acc, p) => {
+        acc[String(p._id)] = p.name;
+        return acc;
+      }, {});
+
+      const enrichedTasks = (tasksData || []).map((t) => ({
+        ...t,
+        projectName: projectNameById[String(t.projectId)] || ""
+      }));
+
+      const lists = {
+        completedTasks: enrichedTasks.filter((t) => t.status === "done"),
+        remainingTasks: enrichedTasks.filter((t) => t.status !== "done"),
+        delayedTasks: enrichedTasks.filter((t) => t.isDelayed),
+        onTimeTasks: enrichedTasks.filter((t) => !t.isDelayed)
+      };
+
+      setChartTaskLists(lists);
+      return lists;
+    })();
+
+    try {
+      return await chartTaskPromiseRef.current;
+    } finally {
+      chartTaskPromiseRef.current = null;
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -275,11 +322,29 @@ const AdminDashboard = () => {
             Reordered stages will be used for new projects created from this admin session.
           </p>
         </div>
-        <CompletionChart completed={stats?.completed ?? 0} total={stats?.totalTasks ?? 0} />
+        <CompletionChart
+          completed={stats?.completed ?? 0}
+          total={stats?.totalTasks ?? 0}
+          completedTasks={chartTaskLists?.completedTasks || null}
+          remainingTasks={chartTaskLists?.remainingTasks || null}
+          loadTaskLists={async () => {
+            const lists = await ensureChartTaskLists();
+            return { completedTasks: lists.completedTasks, remainingTasks: lists.remainingTasks };
+          }}
+        />
       </div>
 
       <div id="alerts" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
-        <DelayChart delayed={stats?.delayed ?? 0} onTime={(stats?.totalTasks ?? 0) - (stats?.delayed ?? 0)} />
+        <DelayChart
+          delayed={stats?.delayed ?? 0}
+          onTime={(stats?.totalTasks ?? 0) - (stats?.delayed ?? 0)}
+          delayedTasks={chartTaskLists?.delayedTasks || null}
+          onTimeTasks={chartTaskLists?.onTimeTasks || null}
+          loadTaskLists={async () => {
+            const lists = await ensureChartTaskLists();
+            return { delayedTasks: lists.delayedTasks, onTimeTasks: lists.onTimeTasks };
+          }}
+        />
         <div className="card">
           <h3 className="text-lg font-semibold">Analytics Snapshot</h3>
           <p className="text-sm text-slate-400">Live completion and delay rates.</p>
