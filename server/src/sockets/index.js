@@ -1,4 +1,5 @@
 import { logAudit } from "../services/auditService.js";
+import { getBearerToken, verifyAccessToken } from "../middleware/auth.js";
 import { getRequestMeta } from "../utils/requestMeta.js";
 
 export const setupSockets = (io) => {
@@ -10,12 +11,14 @@ export const setupSockets = (io) => {
   io.onlineUsers = onlineUsers;
 
   const getUserKey = (userId) => (userId ? String(userId) : "");
+  const getUserRoom = (userId) => `user:${getUserKey(userId)}`;
   const getSessionKey = (userId, sessionId) => {
     const userKey = getUserKey(userId);
     const normalizedSessionId = String(sessionId || "").trim();
     if (!userKey || !normalizedSessionId) return "";
     return `${userKey}:${normalizedSessionId}`;
   };
+  io.getUserRoom = getUserRoom;
 
   const clearPendingSessionLogout = (sessionKey) => {
     if (!sessionKey) return;
@@ -91,8 +94,24 @@ export const setupSockets = (io) => {
     explicitSessionLogouts.set(sessionKey, Date.now());
   };
 
+  io.use((socket, next) => {
+    try {
+      const headerToken = getBearerToken({ headers: socket.handshake?.headers || {} });
+      const token = socket.handshake?.auth?.token || headerToken;
+      const decoded = verifyAccessToken(token);
+      socket.data.userId = String(decoded.id);
+      socket.data.user = decoded;
+      socket.data.sessionId = String(
+        socket.handshake?.auth?.sessionId || socket.handshake?.headers?.["x-session-id"] || ""
+      );
+      return next();
+    } catch (error) {
+      return next(new Error("Unauthorized socket connection"));
+    }
+  });
+
   io.on("connection", (socket) => {
-    const userId = socket.handshake?.auth?.userId || null;
+    const userId = socket.data.userId || null;
     const sessionId = socket.handshake?.auth?.sessionId || null;
     const requestMeta = getRequestMeta({
       headers: socket.handshake?.headers || {},
@@ -101,18 +120,10 @@ export const setupSockets = (io) => {
     });
 
     if (userId) {
-      socket.data.userId = String(userId);
       socket.data.sessionId = String(sessionId || requestMeta.sessionId || "");
+      socket.join(getUserRoom(userId));
       markOnline(userId, socket.data.sessionId);
     }
-
-    socket.on("presence:join", (payload = {}) => {
-      if (socket.data.userId) return;
-      if (!payload.userId) return;
-      socket.data.userId = String(payload.userId);
-      socket.data.sessionId = String(payload.sessionId || requestMeta.sessionId || "");
-      markOnline(socket.data.userId, socket.data.sessionId);
-    });
 
     socket.emit("status", { ok: true, message: "Connected" });
     socket.on("disconnect", () => {

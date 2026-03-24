@@ -16,13 +16,7 @@ const Inbox = lazy(() => import("../pages/Inbox.jsx"));
 const Notifications = lazy(() => import("../pages/Notifications.jsx"));
 const NotFound = lazy(() => import("../pages/NotFound.jsx"));
 
-const RouteFallback = () => (
-  <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">
-    Loading...
-  </div>
-);
-
-const withSuspense = (element) => <Suspense fallback={<RouteFallback />}>{element}</Suspense>;
+const withSuspense = (element) => <Suspense fallback={null}>{element}</Suspense>;
 
 const router = createBrowserRouter([
   {

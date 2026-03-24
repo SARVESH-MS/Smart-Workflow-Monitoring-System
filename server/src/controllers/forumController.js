@@ -44,12 +44,40 @@ const resolveRoomForUser = async (req) => {
   return room;
 };
 
+const getAuthorizedRoom = async (req, requestedRoomId) => {
+  const room = await resolveRoomForUser(req);
+  if (!room) return null;
+  if (requestedRoomId && String(room._id) !== String(requestedRoomId)) {
+    return null;
+  }
+  return room;
+};
+
+const emitForumRoomEvent = async (req, roomId, event, payload) => {
+  const io = req.app.get("io");
+  if (!io?.getUserRoom) return;
+  const room = await ForumRoom.findById(roomId).select("managerId").lean();
+  if (!room?.managerId) return;
+  const audience = await User.find({
+    $or: [{ _id: room.managerId }, { managerId: room.managerId }]
+  })
+    .select("_id")
+    .lean();
+  audience.forEach((user) => {
+    io.to(io.getUserRoom(String(user._id))).emit(event, payload);
+  });
+};
+
 export const listMessages = async (req, res) => {
   const roomId = req.query.roomId;
   if (!roomId) {
     return res.status(400).json({ message: "roomId is required" });
   }
-  const messages = await ForumMessage.find({ roomId })
+  const room = await getAuthorizedRoom(req, roomId);
+  if (!room) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  const messages = await ForumMessage.find({ roomId: room._id })
     .sort({ createdAt: 1 })
     .populate("userId", "name email role");
   res.json(messages);
@@ -95,13 +123,17 @@ export const markRead = async (req, res) => {
 
 export const createMessage = async (req, res) => {
   const payload = messageSchema.parse(req.body);
+  const room = await getAuthorizedRoom(req, payload.roomId);
+  if (!room) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
   const message = await ForumMessage.create({
-    roomId: payload.roomId,
+    roomId: room._id,
     userId: req.user.id,
     text: payload.text || ""
   });
   const populated = await message.populate("userId", "name email role");
-  req.app.get("io").emit("forum:message", populated);
+  await emitForumRoomEvent(req, room._id, "forum:message", populated);
   res.status(201).json(populated);
 };
 
@@ -118,7 +150,7 @@ export const updateMessage = async (req, res) => {
   message.editedAt = new Date();
   await message.save();
   const populated = await message.populate("userId", "name email role");
-  req.app.get("io").emit("forum:message_updated", populated);
+  await emitForumRoomEvent(req, message.roomId, "forum:message_updated", populated);
   res.json(populated);
 };
 
@@ -130,8 +162,9 @@ export const deleteMessage = async (req, res) => {
   if (String(message.userId) !== req.user.id) {
     return res.status(403).json({ message: "Forbidden" });
   }
+  const roomId = message.roomId;
   await message.deleteOne();
-  req.app.get("io").emit("forum:message_deleted", { id: req.params.id });
+  await emitForumRoomEvent(req, roomId, "forum:message_deleted", { id: req.params.id });
   res.json({ success: true });
 };
 
@@ -169,6 +202,6 @@ export const addAttachmentToMessage = async (req, res) => {
   message.attachments.push(payload);
   await message.save();
   const populated = await message.populate("userId", "name email role");
-  req.app.get("io").emit("forum:message_updated", populated);
+  await emitForumRoomEvent(req, message.roomId, "forum:message_updated", populated);
   res.json(populated);
 };

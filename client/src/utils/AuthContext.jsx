@@ -5,12 +5,24 @@ import { me, logout as logoutApi } from "../api/auth.js";
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(getUser());
-  const [token, setToken] = useState(getToken());
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => getUser());
+  const [token, setToken] = useState(() => getToken());
+  const [loading, setLoading] = useState(() => Boolean(getToken() && !getUser()));
 
   useEffect(() => {
     const init = async () => {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      // If we already have a cached session, render immediately and revalidate in the background.
+      if (user) {
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       if (token) {
         try {
           const data = await me();
@@ -49,6 +61,7 @@ export const AuthProvider = ({ children }) => {
         setToken(tokenValue);
         setUser(userValue);
         setAuth(tokenValue, userValue);
+        setLoading(false);
       },
       updateCurrentUser: (nextUser) => {
         setUser(nextUser);
@@ -67,6 +80,7 @@ export const AuthProvider = ({ children }) => {
         clearAuth();
         setUser(null);
         setToken(null);
+        setLoading(false);
       }
     }),
     [user, token, loading]

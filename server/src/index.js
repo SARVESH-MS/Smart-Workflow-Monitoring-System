@@ -34,13 +34,35 @@ import { setupSockets } from "./sockets/index.js";
 
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === "production";
+const allowedOrigins = String(process.env.CLIENT_URL || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const bodyLimit = process.env.REQUEST_BODY_LIMIT || "6mb";
+
+if (!process.env.JWT_SECRET || (isProduction && process.env.JWT_SECRET === "replace_me")) {
+  throw new Error("A strong JWT_SECRET is required");
+}
+if (isProduction && allowedOrigins.length === 0) {
+  throw new Error("CLIENT_URL must be configured in production");
+}
+
+const isOriginAllowed = (origin) => !origin || allowedOrigins.includes(origin);
+const corsOrigin = (origin, callback) => {
+  if (isOriginAllowed(origin)) {
+    return callback(null, true);
+  }
+  return callback(new Error("Blocked by CORS"));
+};
+
 const app = express();
 app.set("trust proxy", true);
 app.set("etag", false);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "*",
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE"]
   }
 });
@@ -49,10 +71,10 @@ app.set("io", io);
 
 app.use(compression());
 app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_URL || "*" }));
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use(morgan("dev"));
+app.use(cors({ origin: corsOrigin }));
+app.use(express.json({ limit: bodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
+app.use(morgan(isProduction ? "combined" : "dev"));
 app.use(slowLog());
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
