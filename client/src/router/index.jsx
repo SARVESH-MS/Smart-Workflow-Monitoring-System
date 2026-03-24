@@ -1,70 +1,80 @@
+import React, { Suspense, lazy } from "react";
 import { Navigate, createBrowserRouter } from "react-router-dom";
-import AuthLayout from "../layouts/AuthLayout.jsx";
-import AdminLayout from "../layouts/AdminLayout.jsx";
-import ManagerLayout from "../layouts/ManagerLayout.jsx";
-import EmployeeLayout from "../layouts/EmployeeLayout.jsx";
-import Login from "../pages/Login.jsx";
-import Register from "../pages/Register.jsx";
-import AdminDashboard from "../pages/AdminDashboard.jsx";
-import ManagerDashboard from "../pages/ManagerDashboard.jsx";
-import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
-import Forum from "../pages/Forum.jsx";
-import Inbox from "../pages/Inbox.jsx";
-import Notifications from "../pages/Notifications.jsx";
-import NotFound from "../pages/NotFound.jsx";
 import ProtectedRoute from "../utils/ProtectedRoute.jsx";
+
+const AuthLayout = lazy(() => import("../layouts/AuthLayout.jsx"));
+const AdminLayout = lazy(() => import("../layouts/AdminLayout.jsx"));
+const ManagerLayout = lazy(() => import("../layouts/ManagerLayout.jsx"));
+const EmployeeLayout = lazy(() => import("../layouts/EmployeeLayout.jsx"));
+const Login = lazy(() => import("../pages/Login.jsx"));
+const Register = lazy(() => import("../pages/Register.jsx"));
+const AdminDashboard = lazy(() => import("../pages/AdminDashboard.jsx"));
+const ManagerDashboard = lazy(() => import("../pages/ManagerDashboard.jsx"));
+const EmployeeDashboard = lazy(() => import("../pages/EmployeeDashboard.jsx"));
+const Forum = lazy(() => import("../pages/Forum.jsx"));
+const Inbox = lazy(() => import("../pages/Inbox.jsx"));
+const Notifications = lazy(() => import("../pages/Notifications.jsx"));
+const NotFound = lazy(() => import("../pages/NotFound.jsx"));
+
+const RouteFallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">
+    Loading...
+  </div>
+);
+
+const withSuspense = (element) => <Suspense fallback={<RouteFallback />}>{element}</Suspense>;
 
 const router = createBrowserRouter([
   {
-    element: <AuthLayout />,
+    element: withSuspense(<AuthLayout />),
     children: [
       { path: "/", element: <Navigate to="/home" replace /> },
       { path: "/home", element: null },
-      { path: "/login", element: <Login /> },
-      { path: "/login/admin", element: <Login role="admin" /> },
-      { path: "/login/manager", element: <Login role="manager" /> },
-      { path: "/login/employee", element: <Login role="employee" /> },
-      { path: "/register", element: <Register /> }
+      { path: "/login", element: withSuspense(<Login />) },
+      { path: "/login/admin", element: withSuspense(<Login role="admin" />) },
+      { path: "/login/manager", element: withSuspense(<Login role="manager" />) },
+      { path: "/login/employee", element: withSuspense(<Login role="employee" />) },
+      { path: "/register", element: withSuspense(<Register />) }
     ]
   },
   {
     path: "/admin",
-    element: (
+    element: withSuspense(
       <ProtectedRoute roles={["admin"]}>
         <AdminLayout />
       </ProtectedRoute>
     ),
-    children: [{ index: true, element: <AdminDashboard /> }]
+    children: [{ index: true, element: withSuspense(<AdminDashboard />) }]
   },
   {
     path: "/manager/:id",
-    element: (
+    element: withSuspense(
       <ProtectedRoute roles={["manager"]}>
         <ManagerLayout />
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <ManagerDashboard /> },
-      { path: "forum", element: <Forum /> },
-      { path: "inbox", element: <Inbox /> },
-      { path: "notifications", element: <Notifications /> }
+      { index: true, element: withSuspense(<ManagerDashboard />) },
+      { path: "forum", element: withSuspense(<Forum />) },
+      { path: "inbox", element: withSuspense(<Inbox />) },
+      { path: "notifications", element: withSuspense(<Notifications />) }
     ]
   },
   {
     path: "/employee/:id",
-    element: (
+    element: withSuspense(
       <ProtectedRoute roles={["employee"]}>
         <EmployeeLayout />
       </ProtectedRoute>
     ),
     children: [
-      { index: true, element: <EmployeeDashboard /> },
-      { path: "forum", element: <Forum /> },
-      { path: "inbox", element: <Inbox /> },
-      { path: "notifications", element: <Notifications /> }
+      { index: true, element: withSuspense(<EmployeeDashboard />) },
+      { path: "forum", element: withSuspense(<Forum />) },
+      { path: "inbox", element: withSuspense(<Inbox />) },
+      { path: "notifications", element: withSuspense(<Notifications />) }
     ]
   },
-  { path: "*", element: <NotFound /> }
+  { path: "*", element: withSuspense(<NotFound />) }
 ]);
 
 export default router;
