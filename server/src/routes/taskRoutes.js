@@ -3,6 +3,7 @@ import {
   createTask,
   listTasks,
   updateTask,
+  addTaskProgressLog,
   startTaskTimer,
   stopTaskTimer,
   completeTask
@@ -16,6 +17,7 @@ const router = express.Router();
 router.get("/", auth, asyncHandler(listTasks));
 router.post("/", auth, role("admin", "manager"), asyncHandler(createTask));
 router.put("/:id", auth, role("admin", "manager"), asyncHandler(updateTask));
+router.post("/:id/progress", auth, role("admin", "manager", "employee"), asyncHandler(addTaskProgressLog));
 router.post("/:id/start", auth, role("manager", "employee"), asyncHandler(startTaskTimer));
 router.post("/:id/stop", auth, role("manager", "employee"), asyncHandler(stopTaskTimer));
 router.post("/:id/complete", auth, role("manager", "employee"), asyncHandler(completeTask));

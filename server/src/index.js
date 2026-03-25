@@ -31,6 +31,7 @@ import { fileURLToPath } from "url";
 import { notFound, errorHandler } from "./middleware/error.js";
 import { slowLog } from "./middleware/slowLog.js";
 import { setupSockets } from "./sockets/index.js";
+import { startDailyProgressReminderService } from "./services/dailyProgressReminderService.js";
 
 dotenv.config();
 
@@ -120,6 +121,7 @@ const PORT = process.env.PORT || 5000;
 
 connectDB()
   .then(() => {
+    startDailyProgressReminderService();
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

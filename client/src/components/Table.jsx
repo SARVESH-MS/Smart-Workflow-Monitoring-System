@@ -6,7 +6,7 @@ const Table = ({ columns, data }) => (
       className="table-scroll w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
       style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
     >
-      <table className="min-w-[560px] w-full text-left text-xs sm:min-w-[640px] sm:text-sm">
+      <table className="min-w-[760px] w-full text-left text-xs sm:min-w-[900px] sm:text-sm">
         <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
           <tr>
             {columns.map((col) => (
@@ -18,7 +18,7 @@ const Table = ({ columns, data }) => (
           {data.map((row) => (
             <tr key={row.id || row._id} className="border-t border-slate-800">
               {columns.map((col) => (
-                <td key={col.key} className="break-words py-2 pr-3 text-slate-200 sm:py-3 sm:pr-4">
+                <td key={col.key} className="align-top break-normal py-2 pr-3 text-slate-200 sm:py-3 sm:pr-4">
                   {row[col.key]}
                 </td>
               ))}

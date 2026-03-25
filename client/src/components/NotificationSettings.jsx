@@ -20,7 +20,9 @@ const NotificationSettings = () => {
   const prefs = user?.notificationPrefs || {
     emailDelay: true,
     emailComplete: false,
-    smsDelay: false
+    smsDelay: false,
+    smsDailyProgress: false,
+    desktopDailyProgress: true
   };
 
   const update = async (next) => {
@@ -54,6 +56,16 @@ const NotificationSettings = () => {
           label="SMS on delays"
           checked={prefs.smsDelay}
           onChange={(value) => update({ ...prefs, smsDelay: value })}
+        />
+        <Toggle
+          label="SMS for daily progress reminder"
+          checked={prefs.smsDailyProgress}
+          onChange={(value) => update({ ...prefs, smsDailyProgress: value })}
+        />
+        <Toggle
+          label="Laptop popup for daily progress reminder"
+          checked={prefs.desktopDailyProgress}
+          onChange={(value) => update({ ...prefs, desktopDailyProgress: value })}
         />
       </div>
     </div>

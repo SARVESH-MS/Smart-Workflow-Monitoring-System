@@ -168,7 +168,9 @@ export const SidebarProfilePanel = ({
   const [prefsForm, setPrefsForm] = useState({
     emailDelay: true,
     emailComplete: false,
-    smsDelay: false
+    smsDelay: false,
+    smsDailyProgress: false,
+    desktopDailyProgress: true
   });
 
   useEffect(() => {
@@ -182,7 +184,12 @@ export const SidebarProfilePanel = ({
     setPrefsForm({
       emailDelay: Boolean(user?.notificationPrefs?.emailDelay),
       emailComplete: Boolean(user?.notificationPrefs?.emailComplete),
-      smsDelay: Boolean(user?.notificationPrefs?.smsDelay)
+      smsDelay: Boolean(user?.notificationPrefs?.smsDelay),
+      smsDailyProgress: Boolean(user?.notificationPrefs?.smsDailyProgress),
+      desktopDailyProgress:
+        user?.notificationPrefs?.desktopDailyProgress === undefined
+          ? true
+          : Boolean(user?.notificationPrefs?.desktopDailyProgress)
     });
   }, [user]);
 
@@ -204,7 +211,12 @@ export const SidebarProfilePanel = ({
     setPrefsForm({
       emailDelay: Boolean(user?.notificationPrefs?.emailDelay),
       emailComplete: Boolean(user?.notificationPrefs?.emailComplete),
-      smsDelay: Boolean(user?.notificationPrefs?.smsDelay)
+      smsDelay: Boolean(user?.notificationPrefs?.smsDelay),
+      smsDailyProgress: Boolean(user?.notificationPrefs?.smsDailyProgress),
+      desktopDailyProgress:
+        user?.notificationPrefs?.desktopDailyProgress === undefined
+          ? true
+          : Boolean(user?.notificationPrefs?.desktopDailyProgress)
     });
   };
 
@@ -285,7 +297,7 @@ export const SidebarProfilePanel = ({
           {compact && showThemeToggle && (
             <button
               type="button"
-              className="grid h-11 w-11 place-items-center rounded-xl border border-slate-700 bg-slate-900/60 shadow-sm backdrop-blur transition-transform duration-150 active:scale-95"
+              className="grid h-8 w-8 place-items-center rounded-lg border border-slate-700 bg-slate-900/60 shadow-sm backdrop-blur transition-transform duration-150 active:scale-95"
               onClick={onToggleTheme}
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -293,7 +305,7 @@ export const SidebarProfilePanel = ({
               <img
                 src={theme === "dark" ? LIGHT_MODE_IMAGE : DARK_MODE_IMAGE}
                 alt={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                className="h-5 w-5"
+                className="h-4 w-4"
               />
             </button>
           )}
@@ -433,6 +445,30 @@ export const SidebarProfilePanel = ({
                           checked={prefsForm.smsDelay}
                           disabled={!isEditingProfile}
                           onChange={(e) => setPrefsForm((prev) => ({ ...prev, smsDelay: e.target.checked }))}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-4">
+                        <span>Laptop popup for daily progress</span>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-blue-500"
+                          checked={prefsForm.desktopDailyProgress}
+                          disabled={!isEditingProfile}
+                          onChange={(e) =>
+                            setPrefsForm((prev) => ({ ...prev, desktopDailyProgress: e.target.checked }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-4">
+                        <span>SMS for daily progress reminder</span>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-blue-500"
+                          checked={prefsForm.smsDailyProgress}
+                          disabled={!isEditingProfile}
+                          onChange={(e) =>
+                            setPrefsForm((prev) => ({ ...prev, smsDailyProgress: e.target.checked }))
+                          }
                         />
                       </label>
                     </div>

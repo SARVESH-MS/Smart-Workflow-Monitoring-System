@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../utils/AuthContext.jsx";
 import Sidebar, { SidebarProfilePanel } from "../components/Sidebar.jsx";
+import DesktopNotificationBridge from "../components/DesktopNotificationBridge.jsx";
 import useMobileMenuSwipe from "../utils/useMobileMenuSwipe.js";
 
 const ManagerLayout = () => {
@@ -55,6 +56,7 @@ const ManagerLayout = () => {
 
   return (
     <div className={`dashboard-shell min-h-screen grid grid-cols-1 lg:h-screen lg:grid-cols-[260px_1fr] lg:overflow-hidden ${theme === "light" ? "dashboard-theme-light" : "dashboard-theme-dark"}`}>
+      <DesktopNotificationBridge user={user} />
       <main className="dashboard-main-pane order-1 min-w-0 w-full overflow-x-hidden p-4 pt-24 sm:p-6 sm:pt-6 lg:order-2 lg:h-screen lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
         <div className="grid min-w-0 gap-4 sm:gap-6">
           <Outlet />

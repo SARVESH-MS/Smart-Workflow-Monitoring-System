@@ -20,7 +20,7 @@ const GlobalSearch = () => {
     <div className="card">
       <div className="text-sm font-semibold">Global Search</div>
       <input
-        className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm"
+        className="global-search-field mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-400"
         placeholder="Search tasks, projects, users"
         value={q}
         onChange={(e) => setQ(e.target.value)}

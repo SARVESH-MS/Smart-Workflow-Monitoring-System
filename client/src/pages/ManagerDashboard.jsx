@@ -15,6 +15,9 @@ import { bulkUpdateTasks } from "../api/bulk.js";
 import GlobalSearch from "../components/GlobalSearch.jsx";
 import AvailabilityCard from "../components/AvailabilityCard.jsx";
 import PerformanceScorecard from "../components/PerformanceScorecard.jsx";
+import TaskProgressSummary from "../components/TaskProgressSummary.jsx";
+import TaskProgressReview from "../components/TaskProgressReview.jsx";
+import DailyProgressStatusBadge from "../components/DailyProgressStatusBadge.jsx";
 import { listMyEmailUnreadCount } from "../api/emails.js";
 import { listMyNotificationUnreadCount } from "../api/notifications.js";
 import { getUnreadForumCount } from "../api/forum.js";
@@ -130,6 +133,7 @@ const ManagerDashboard = () => {
       { key: "select", label: "" },
       { key: "title", label: "Task" },
       { key: "assignee", label: "Assignee" },
+      { key: "progress", label: "Latest Progress" },
       { key: "deadline", label: "Deadline" },
       { key: "timeSpent", label: "Time Spent" },
       { key: "status", label: "Status" }
@@ -149,6 +153,9 @@ const ManagerDashboard = () => {
   const taskRows = filteredTasks.map((task) => {
     const user = team.find((member) => member._id === task.userId);
     const editValue = deadlineEdits[task._id] ?? (task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "");
+    const lastProgressAt = task.lastProgressAt ? dayjs(task.lastProgressAt) : null;
+    const isMissingTodayProgress =
+      task.status === "in_progress" && (!lastProgressAt || !lastProgressAt.isSame(dayjs(), "day"));
     return {
       ...task,
       select: (
@@ -162,8 +169,38 @@ const ManagerDashboard = () => {
           }
         />
       ),
+      title: (
+        <div className="min-w-[16rem] max-w-[26rem]">
+          <div className="font-medium text-slate-200">{task.title}</div>
+          {task.description ? (
+            <div className="mt-1 text-xs leading-5 text-slate-400">
+              {task.description}
+            </div>
+          ) : null}
+        </div>
+      ),
       assignee: user?.name || "-",
+      progress: (
+        <div className="min-w-[16rem]">
+          <TaskProgressSummary progressLogs={task.progressLogs} />
+          <div className="mt-2">
+            <DailyProgressStatusBadge status={task.dailyProgressStatus} />
+          </div>
+          <TaskProgressReview review={task.progressReview} compact />
+        </div>
+      ),
       timeSpent: formatDurationHours(task.timeSpent || 0),
+      status: (
+        <div className="min-w-[10rem]">
+          <div className="font-medium text-slate-200">{task.status}</div>
+          {isMissingTodayProgress ? (
+            <div className="mt-1 text-xs text-amber-300">Employee has not added today&apos;s progress.</div>
+          ) : null}
+          {task.progressReview?.riskLevel === "high" ? (
+            <div className="mt-1 text-xs text-rose-300">Recent progress needs manager review.</div>
+          ) : null}
+        </div>
+      ),
       deadline: (
         <div className="flex items-center gap-2">
           <input
@@ -870,6 +907,10 @@ const ManagerDashboard = () => {
 
       <Modal open={open} title="Assign Task" onClose={() => setOpen(false)}>
         <form className="grid gap-3" onSubmit={handleAssign}>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-xs text-slate-400">
+            Employees in any role must add a same-day progress update before they can stop or complete a task. Ask them
+            to record the work type, the exact area touched, the progress state, and supporting evidence for that day.
+          </div>
           <select
             className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
             value={form.projectId}

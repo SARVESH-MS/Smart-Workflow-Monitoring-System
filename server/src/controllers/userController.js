@@ -64,7 +64,9 @@ export const teamByManager = async (req, res) => {
 const prefsSchema = z.object({
   emailDelay: z.boolean(),
   emailComplete: z.boolean(),
-  smsDelay: z.boolean()
+  smsDelay: z.boolean(),
+  smsDailyProgress: z.boolean(),
+  desktopDailyProgress: z.boolean()
 });
 
 const profileSchema = z.object({

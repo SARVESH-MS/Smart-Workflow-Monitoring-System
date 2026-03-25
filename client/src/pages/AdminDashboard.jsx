@@ -23,10 +23,10 @@ import GlobalSearch from "../components/GlobalSearch.jsx";
 import DigestSender from "../components/DigestSender.jsx";
 
 const DisclosureIcon = ({ open }) => (
-  <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center" aria-hidden="true">
+  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center" aria-hidden="true">
     <svg
       viewBox="0 0 64 64"
-      className={`h-10 w-10 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      className={`h-6 w-6 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
       fill="none"
     >
       <rect x="9" y="9" width="46" height="46" rx="12" fill="#11181d" stroke="#11181d" strokeWidth="1.5" />
@@ -378,7 +378,7 @@ const AdminDashboard = () => {
           className="table-scroll mt-4 w-full max-w-full overflow-x-auto overflow-y-hidden thin-scrollbar pb-2"
           style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
         >
-          <table className="min-w-[640px] w-full text-left text-xs sm:text-sm">
+          <table className="min-w-[920px] w-full text-left text-xs sm:text-sm">
             <thead className="text-[11px] uppercase text-slate-400 sm:text-xs">
               <tr>
                 <th className="py-2 pr-4">User</th>
@@ -386,6 +386,8 @@ const AdminDashboard = () => {
                 <th className="py-2 pr-4">Email Delay</th>
                 <th className="py-2 pr-4">Email Complete</th>
                 <th className="py-2 pr-4">SMS Delay</th>
+                <th className="py-2 pr-4">SMS Daily Progress</th>
+                <th className="py-2 pr-4">Laptop Popup</th>
               </tr>
             </thead>
             <tbody>
@@ -399,7 +401,9 @@ const AdminDashboard = () => {
                   {[
                     { key: "emailDelay", label: "Email Delay" },
                     { key: "emailComplete", label: "Email Complete" },
-                    { key: "smsDelay", label: "SMS Delay" }
+                    { key: "smsDelay", label: "SMS Delay" },
+                    { key: "smsDailyProgress", label: "SMS Daily Progress" },
+                    { key: "desktopDailyProgress", label: "Laptop Popup" }
                   ].map((pref) => (
                     <td key={pref.key} className="py-2 pr-4">
                       <input
@@ -411,6 +415,11 @@ const AdminDashboard = () => {
                             emailDelay: Boolean(user.notificationPrefs?.emailDelay),
                             emailComplete: Boolean(user.notificationPrefs?.emailComplete),
                             smsDelay: Boolean(user.notificationPrefs?.smsDelay),
+                            smsDailyProgress: Boolean(user.notificationPrefs?.smsDailyProgress),
+                            desktopDailyProgress:
+                              user.notificationPrefs?.desktopDailyProgress === undefined
+                                ? true
+                                : Boolean(user.notificationPrefs?.desktopDailyProgress),
                             [pref.key]: e.target.checked
                           };
                           await updateUserPreferences(user._id, next);

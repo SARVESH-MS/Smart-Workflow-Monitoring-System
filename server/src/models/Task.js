@@ -1,5 +1,19 @@
 import mongoose from "mongoose";
 
+const TaskProgressLogSchema = new mongoose.Schema(
+  {
+    workType: { type: String, required: true },
+    affectedArea: { type: String, required: true },
+    progressState: { type: String, required: true },
+    evidenceType: { type: String, required: true },
+    note: { type: String, required: true },
+    evidenceUrl: { type: String, default: "" },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    loggedAt: { type: Date, default: Date.now }
+  },
+  { _id: false }
+);
+
 const TaskSchema = new mongoose.Schema(
   {
     projectId: { type: mongoose.Schema.Types.ObjectId, ref: "Project", required: true },
@@ -18,7 +32,9 @@ const TaskSchema = new mongoose.Schema(
       default: "todo"
     },
     deadline: { type: Date, required: true },
-    isDelayed: { type: Boolean, default: false }
+    isDelayed: { type: Boolean, default: false },
+    progressLogs: { type: [TaskProgressLogSchema], default: [] },
+    lastProgressAt: { type: Date }
   },
   { timestamps: true }
 );

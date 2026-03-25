@@ -31,6 +31,38 @@ const getTemplate = async (key, fallback) => {
 
 const uniqueRecipients = (...emails) => [...new Set(emails.filter(Boolean))];
 
+const hasExistingReminderEmailLog = async (reminderKey, templateKey) => {
+  if (!reminderKey) return false;
+  const existing = await EmailLog.findOne({
+    templateKey,
+    "meta.reminderKey": reminderKey
+  })
+    .select("_id")
+    .lean();
+  return Boolean(existing);
+};
+
+const createUniqueNotification = async ({ userId, type, title, message, meta }) => {
+  if (!userId) return null;
+  if (meta?.reminderKey) {
+    const existing = await Notification.findOne({
+      userId,
+      type,
+      "meta.reminderKey": meta.reminderKey
+    })
+      .select("_id")
+      .lean();
+    if (existing) return existing;
+  }
+  return Notification.create({
+    userId,
+    type,
+    title,
+    message,
+    meta
+  }).catch(() => null);
+};
+
 const createInAppInboxLogs = async ({ recipients, subject, html, templateKey, meta }) => {
   if (!recipients.length) return new Map();
   const created = await EmailLog.insertMany(
@@ -241,4 +273,79 @@ export const notifyDelaySms = async ({ user, manager, task, project }) => {
     userPref(user, "smsDelay", false) ? user?.phone : null
   ].filter(Boolean);
   await Promise.all(numbers.map((to) => sendSms({ to, body }).catch(() => null)));
+};
+
+export const notifyMissingDailyProgress = async ({ user, manager, task, project, reminderKey, workdayEndsAtLabel }) => {
+  const templateKey = "task.progress.missing.email";
+  if (await hasExistingReminderEmailLog(reminderKey, templateKey)) {
+    return;
+  }
+
+  const projectName = project?.name || "Project";
+  const title = `Today's progress missing: ${task.title}`;
+  const subject = `Reminder: upload today's progress for ${task.title}`;
+  const html = `
+    <div>
+      <h2>Daily Progress Reminder</h2>
+      <p><strong>Task:</strong> ${task.title}</p>
+      <p><strong>Project:</strong> ${projectName}</p>
+      <p><strong>Assigned to:</strong> ${user?.name || "Employee"}</p>
+      <p>Today's progress update is still missing. Please upload the work summary and proof link before ${workdayEndsAtLabel}.</p>
+    </div>
+  `;
+
+  const allRecipients = uniqueRecipients(manager?.email, user?.email);
+  await createInAppInboxLogs({
+    recipients: allRecipients,
+    subject,
+    html,
+    templateKey,
+    meta: {
+      reminderKey,
+      projectId: project?._id,
+      taskId: task?._id,
+      kind: "missing_daily_progress"
+    }
+  });
+
+  await Promise.all(
+    [
+      {
+        target: user,
+        message: `Upload today's progress for ${task.title} before ${workdayEndsAtLabel}.`
+      },
+      {
+        target: manager,
+        message: `${user?.name || "Employee"} has not uploaded today's progress for ${task.title} before ${workdayEndsAtLabel}.`
+      }
+    ]
+      .filter((item) => item.target?._id)
+      .map((item) =>
+        createUniqueNotification({
+          userId: item.target._id,
+          type: "task.progress.missing",
+          title,
+          message: item.message,
+          meta: {
+            reminderKey,
+            projectId: project?._id,
+            taskId: task?._id
+          }
+        })
+      )
+  );
+
+  const smsRecipients = [
+    { target: user, message: `SWMS reminder: upload today's progress for ${task.title} before ${workdayEndsAtLabel}.` },
+    {
+      target: manager,
+      message: `SWMS reminder: ${user?.name || "Employee"} has not uploaded today's progress for ${task.title} before ${workdayEndsAtLabel}.`
+    }
+  ].filter((item) => item.target?.phone && userPref(item.target, "smsDailyProgress", false));
+
+  await Promise.all(
+    smsRecipients.map((item) =>
+      sendSms({ to: item.target.phone, body: item.message }).catch(() => null)
+    )
+  );
 };
