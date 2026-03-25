@@ -797,6 +797,25 @@ body::-webkit-scrollbar {
   animation: landingSlideIn 260ms ease-out;
 }
 
+/*
+  Keep landing-page hit targets physically stable.
+  The global .card/.btn hover transforms cause hover jitter in the auth panel,
+  which makes the cursor rapidly switch between arrow, hand, and text states.
+*/
+.landing-topbar,
+.landing-scroll-shell,
+.landing-auth-panel {
+  transform: none !important;
+}
+
+.landing-topbar:hover,
+.landing-scroll-shell:hover,
+.landing-auth-panel:hover,
+.landing-shell .btn:hover,
+.landing-shell .btn:active {
+  transform: none !important;
+}
+
 @keyframes landingFadeDown {
   0% {
     opacity: 0;
