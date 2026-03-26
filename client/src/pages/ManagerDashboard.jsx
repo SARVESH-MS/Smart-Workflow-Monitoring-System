@@ -182,7 +182,7 @@ const ManagerDashboard = () => {
       assignee: user?.name || "-",
       progress: (
         <div className="min-w-[16rem]">
-          <TaskProgressSummary progressLogs={task.progressLogs} />
+          <TaskProgressSummary latestProgressLog={task.latestProgressLog} />
           <div className="mt-2">
             <DailyProgressStatusBadge status={task.dailyProgressStatus} />
           </div>

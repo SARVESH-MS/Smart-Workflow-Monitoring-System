@@ -226,13 +226,23 @@ const buildDailyProgressStatus = (task) => {
   };
 };
 
-const toTaskResponse = (task) => {
+const getLatestProgressLog = (progressLogs = []) => {
+  if (!Array.isArray(progressLogs) || progressLogs.length === 0) return null;
+  return progressLogs[progressLogs.length - 1];
+};
+
+const toTaskResponse = (task, options = {}) => {
   const rawTask = typeof task?.toObject === "function" ? task.toObject() : task;
-  return {
+  const response = {
     ...rawTask,
+    latestProgressLog: getLatestProgressLog(rawTask?.progressLogs),
     dailyProgressStatus: buildDailyProgressStatus(rawTask),
     progressReview: buildProgressReview(rawTask?.progressLogs)
   };
+  if (options.compact) {
+    delete response.progressLogs;
+  }
+  return response;
 };
 
 const hasProgressToday = (task, userId) =>
@@ -315,7 +325,8 @@ export const listTasks = async (req, res) => {
   if (skip) taskQuery = taskQuery.skip(skip);
   if (limit) taskQuery = taskQuery.limit(limit);
   const tasks = await taskQuery.lean();
-  res.json(tasks.map(toTaskResponse));
+  const isCompact = compact === "1" || compact === "true";
+  res.json(tasks.map((task) => toTaskResponse(task, { compact: isCompact })));
 };
 
 export const updateTask = async (req, res) => {

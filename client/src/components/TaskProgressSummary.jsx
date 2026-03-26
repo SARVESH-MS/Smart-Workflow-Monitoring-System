@@ -39,8 +39,9 @@ const truncate = (value, max = 96) => {
   return `${text.slice(0, max - 1)}...`;
 };
 
-const TaskProgressSummary = ({ progressLogs = [], showEvidence = true }) => {
-  const latest = Array.isArray(progressLogs) && progressLogs.length > 0 ? progressLogs[progressLogs.length - 1] : null;
+const TaskProgressSummary = ({ progressLogs = [], latestProgressLog = null, showEvidence = true }) => {
+  const latest =
+    latestProgressLog || (Array.isArray(progressLogs) && progressLogs.length > 0 ? progressLogs[progressLogs.length - 1] : null);
 
   if (!latest) {
     return <div className="text-xs text-rose-300">No daily progress update yet.</div>;

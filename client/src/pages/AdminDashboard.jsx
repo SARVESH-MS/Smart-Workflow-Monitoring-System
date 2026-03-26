@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { listProjects, createProject, updateProject } from "../api/projects.js";
 import { summary } from "../api/analytics.js";
 import { listTasks } from "../api/tasks.js";
@@ -6,8 +6,6 @@ import StatCard from "../components/StatCard.jsx";
 import Table from "../components/Table.jsx";
 import Modal from "../components/Modal.jsx";
 import { formatDate } from "../utils/date.js";
-import CompletionChart from "../charts/CompletionChart.jsx";
-import DelayChart from "../charts/DelayChart.jsx";
 import { createSocket } from "../utils/socket.js";
 import {
   listUsers,
@@ -21,6 +19,9 @@ import { listTemplates, updateTemplate } from "../api/templates.js";
 import { listEmailLogs } from "../api/emails.js";
 import GlobalSearch from "../components/GlobalSearch.jsx";
 import DigestSender from "../components/DigestSender.jsx";
+
+const CompletionChart = lazy(() => import("../charts/CompletionChart.jsx"));
+const DelayChart = lazy(() => import("../charts/DelayChart.jsx"));
 
 const DisclosureIcon = ({ open }) => (
   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center" aria-hidden="true">
@@ -337,29 +338,33 @@ const AdminDashboard = () => {
             Reordered stages will be used for new projects created from this admin session.
           </p>
         </div>
-        <CompletionChart
-          completed={stats?.completed ?? 0}
-          total={stats?.totalTasks ?? 0}
-          completedTasks={chartTaskLists?.completedTasks || null}
-          remainingTasks={chartTaskLists?.remainingTasks || null}
-          loadTaskLists={async () => {
-            const lists = await ensureChartTaskLists();
-            return { completedTasks: lists.completedTasks, remainingTasks: lists.remainingTasks };
-          }}
-        />
+        <Suspense fallback={<div className="card text-sm text-slate-400">Loading completion chart...</div>}>
+          <CompletionChart
+            completed={stats?.completed ?? 0}
+            total={stats?.totalTasks ?? 0}
+            completedTasks={chartTaskLists?.completedTasks || null}
+            remainingTasks={chartTaskLists?.remainingTasks || null}
+            loadTaskLists={async () => {
+              const lists = await ensureChartTaskLists();
+              return { completedTasks: lists.completedTasks, remainingTasks: lists.remainingTasks };
+            }}
+          />
+        </Suspense>
       </div>
 
       <div id="alerts" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
-        <DelayChart
-          delayed={stats?.delayed ?? 0}
-          onTime={(stats?.totalTasks ?? 0) - (stats?.delayed ?? 0)}
-          delayedTasks={chartTaskLists?.delayedTasks || null}
-          onTimeTasks={chartTaskLists?.onTimeTasks || null}
-          loadTaskLists={async () => {
-            const lists = await ensureChartTaskLists();
-            return { delayedTasks: lists.delayedTasks, onTimeTasks: lists.onTimeTasks };
-          }}
-        />
+        <Suspense fallback={<div className="card text-sm text-slate-400">Loading delay chart...</div>}>
+          <DelayChart
+            delayed={stats?.delayed ?? 0}
+            onTime={(stats?.totalTasks ?? 0) - (stats?.delayed ?? 0)}
+            delayedTasks={chartTaskLists?.delayedTasks || null}
+            onTimeTasks={chartTaskLists?.onTimeTasks || null}
+            loadTaskLists={async () => {
+              const lists = await ensureChartTaskLists();
+              return { delayedTasks: lists.delayedTasks, onTimeTasks: lists.onTimeTasks };
+            }}
+          />
+        </Suspense>
         <div className="card">
           <h3 className="text-lg font-semibold">Analytics Snapshot</h3>
           <p className="text-sm text-slate-400">Live completion and delay rates.</p>

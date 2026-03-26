@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { listTasks, startTask, stopTask, completeTask, addTaskProgress } from "../api/tasks.js";
 import TimerControls from "../components/TimerControls.jsx";
 import StatCard from "../components/StatCard.jsx";
 import { formatDate, formatDurationHours } from "../utils/date.js";
-import CompletionChart from "../charts/CompletionChart.jsx";
-import DelayChart from "../charts/DelayChart.jsx";
 import AvailabilityCard from "../components/AvailabilityCard.jsx";
 import TaskProgressSummary from "../components/TaskProgressSummary.jsx";
 import TaskProgressReview from "../components/TaskProgressReview.jsx";
@@ -47,6 +45,9 @@ const EVIDENCE_TYPE_OPTIONS = [
   { value: "issue", label: "Issue/Bug" },
   { value: "other", label: "Other" }
 ];
+
+const CompletionChart = lazy(() => import("../charts/CompletionChart.jsx"));
+const DelayChart = lazy(() => import("../charts/DelayChart.jsx"));
 
 const emptyProgressDraft = () => ({
   workType: "other",
@@ -364,7 +365,10 @@ const EmployeeDashboard = () => {
               <div className="mt-3">
                 <div className="text-xs uppercase tracking-wide text-slate-500">Latest Progress</div>
                 <div className="mt-2">
-                  <TaskProgressSummary progressLogs={active.progressLogs} />
+                  <TaskProgressSummary
+                    latestProgressLog={active.latestProgressLog}
+                    progressLogs={active.progressLogs}
+                  />
                 </div>
               </div>
               <div className="mt-4">
@@ -422,7 +426,7 @@ const EmployeeDashboard = () => {
                     <td className="break-words py-3 pr-4 text-slate-200">{task.deadlineLabel}</td>
                     <td className="break-words py-3 pr-4 text-slate-200">{task.timeSpent}</td>
                     <td className="min-w-[14rem] break-words py-3 pr-4 text-slate-200">
-                      <TaskProgressSummary progressLogs={task.progressLogs} />
+                      <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
                       <div className="mt-2">
                         <DailyProgressStatusBadge status={task.dailyProgressStatus} />
                       </div>
@@ -499,18 +503,22 @@ const EmployeeDashboard = () => {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <CompletionChart
-          completed={tasks.filter((t) => t.status === "done").length}
-          total={tasks.length}
-          completedTasks={tasks.filter((t) => t.status === "done")}
-          remainingTasks={tasks.filter((t) => t.status !== "done")}
-        />
-        <DelayChart
-          delayed={tasks.filter((t) => t.isDelayed).length}
-          onTime={tasks.filter((t) => !t.isDelayed).length}
-          delayedTasks={tasks.filter((t) => t.isDelayed)}
-          onTimeTasks={tasks.filter((t) => !t.isDelayed)}
-        />
+        <Suspense fallback={<div className="card text-sm text-slate-400">Loading completion chart...</div>}>
+          <CompletionChart
+            completed={tasks.filter((t) => t.status === "done").length}
+            total={tasks.length}
+            completedTasks={tasks.filter((t) => t.status === "done")}
+            remainingTasks={tasks.filter((t) => t.status !== "done")}
+          />
+        </Suspense>
+        <Suspense fallback={<div className="card text-sm text-slate-400">Loading delay chart...</div>}>
+          <DelayChart
+            delayed={tasks.filter((t) => t.isDelayed).length}
+            onTime={tasks.filter((t) => !t.isDelayed).length}
+            delayedTasks={tasks.filter((t) => t.isDelayed)}
+            onTimeTasks={tasks.filter((t) => !t.isDelayed)}
+          />
+        </Suspense>
       </div>
 
       <div id="capacity" className="scroll-mt-6">
