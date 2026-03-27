@@ -1,17 +1,21 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { listTasks, startTask, stopTask, completeTask, addTaskProgress } from "../api/tasks.js";
+import { listTasks, startTask, stopTask, completeTask, addTaskProgress, uploadTaskEvidence } from "../api/tasks.js";
 import TimerControls from "../components/TimerControls.jsx";
 import StatCard from "../components/StatCard.jsx";
 import { formatDate, formatDurationHours } from "../utils/date.js";
 import AvailabilityCard from "../components/AvailabilityCard.jsx";
+import Modal from "../components/Modal.jsx";
 import TaskProgressSummary from "../components/TaskProgressSummary.jsx";
 import TaskProgressReview from "../components/TaskProgressReview.jsx";
+import TaskProofHistory from "../components/TaskProofHistory.jsx";
 import DailyProgressStatusBadge from "../components/DailyProgressStatusBadge.jsx";
+import DisclosureIcon from "../components/DisclosureIcon.jsx";
 import { createSocket } from "../utils/socket.js";
 import { listMyEmailUnreadCount } from "../api/emails.js";
 import { listMyNotificationUnreadCount } from "../api/notifications.js";
 import { getUnreadForumCount } from "../api/forum.js";
+import { getEvidenceReference, hasEvidenceReference, resolveEvidenceUrl } from "../utils/evidence.js";
 
 const WORK_TYPE_OPTIONS = [
   { value: "design", label: "Design" },
@@ -55,13 +59,18 @@ const emptyProgressDraft = () => ({
   progressState: "partial",
   evidenceType: "none",
   note: "",
-  evidenceUrl: ""
+  evidenceUrl: "",
+  evidenceAttachment: null,
+  evidenceFile: null
 });
 
 const EmployeeDashboard = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false
+  );
   const [unreadEmails, setUnreadEmails] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadForum, setUnreadForum] = useState(0);
@@ -70,6 +79,8 @@ const EmployeeDashboard = () => {
   const [submittingProgressTaskId, setSubmittingProgressTaskId] = useState("");
   const [taskFeedback, setTaskFeedback] = useState("");
   const [activeElapsedSec, setActiveElapsedSec] = useState(0);
+  const [proofHistoryTask, setProofHistoryTask] = useState(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
 
   const getProgressDraft = (taskId) => ({
     ...emptyProgressDraft(),
@@ -110,7 +121,7 @@ const EmployeeDashboard = () => {
 
   useEffect(() => {
     loadBadges();
-    const timer = setInterval(loadBadges, 15000);
+    const timer = setInterval(loadBadges, 30000);
     return () => clearInterval(timer);
   }, [id]);
 
@@ -118,10 +129,24 @@ const EmployeeDashboard = () => {
     const socket = createSocket();
     socket.on("task:updated", () => {
       load();
-      loadBadges();
     });
     return () => socket.disconnect();
   }, [id]);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const handleChange = (event) => setIsMobile(event.matches);
+
+    setIsMobile(mediaQuery.matches);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   const active = tasks.find((task) => task.status === "in_progress");
 
@@ -177,18 +202,40 @@ const EmployeeDashboard = () => {
       setTaskFeedback("Write today's progress before saving.");
       return;
     }
+    if (draft.evidenceType !== "none" && !String(draft.evidenceUrl || "").trim() && !draft.evidenceFile && !draft.evidenceAttachment?.url) {
+      setTaskFeedback("Add an evidence link or upload a file for the selected evidence type.");
+      return;
+    }
     setSubmittingProgressTaskId(taskId);
     setTaskFeedback("");
     try {
-      const updatedTask = await addTaskProgress(taskId, draft);
+      let evidenceAttachment = draft.evidenceAttachment || null;
+      let evidenceUrl = String(draft.evidenceUrl || "").trim();
+
+      if (draft.evidenceFile) {
+        evidenceAttachment = await uploadTaskEvidence(draft.evidenceFile);
+        if (!evidenceUrl) {
+          evidenceUrl = evidenceAttachment.url;
+        }
+      }
+
+      const updatedTask = await addTaskProgress(taskId, {
+        workType: draft.workType,
+        affectedArea: draft.affectedArea,
+        progressState: draft.progressState,
+        evidenceType: draft.evidenceType,
+        note: draft.note,
+        evidenceUrl,
+        evidenceAttachment
+      });
       setProgressDrafts((prev) => ({
         ...prev,
         [taskId]: emptyProgressDraft()
       }));
       if (updatedTask?.progressReview?.riskLevel === "high") {
-        setTaskFeedback("Today's progress was saved, but it looks very similar to recent updates. Add stronger evidence or clearer changes.");
+        setTaskFeedback("Today's progress was saved, but the submission review found strong issues. Add clearer evidence or make sure the proof matches the assigned task.");
       } else if (updatedTask?.progressReview?.riskLevel === "warning") {
-        setTaskFeedback("Today's progress was saved. The 7-day review suggests the latest proof may need clearer changes.");
+        setTaskFeedback("Today's progress was saved. Submission review suggests the latest proof may need clearer changes or better task alignment.");
       } else {
         setTaskFeedback("Today's progress has been saved.");
       }
@@ -264,12 +311,53 @@ const EmployeeDashboard = () => {
               ))}
             </select>
           </div>
+          <div className="grid gap-1">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Evidence Link</label>
+            <input
+              className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
+              placeholder={draft.evidenceType === "none" ? "Evidence link optional" : "Evidence link or uploaded file"}
+              value={draft.evidenceUrl}
+              onChange={(e) => updateProgressDraft(task._id, { evidenceUrl: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-1">
+          <label className="text-xs uppercase tracking-wide text-slate-500">Evidence File</label>
           <input
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm"
-            placeholder={draft.evidenceType === "none" ? "Evidence link optional" : "Evidence link required"}
-            value={draft.evidenceUrl}
-            onChange={(e) => updateProgressDraft(task._id, { evidenceUrl: e.target.value })}
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:text-slate-200"
+            type="file"
+            accept=".pdf,.doc,.docx,.txt,.rtf,.ppt,.pptx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.zip,.rar,.7z,.json,.md"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null;
+              const nextEvidenceType =
+                file && draft.evidenceType === "none"
+                  ? file.type.startsWith("image/")
+                    ? "screenshot"
+                    : "document"
+                  : draft.evidenceType;
+              updateProgressDraft(task._id, {
+                evidenceFile: file,
+                evidenceAttachment: null,
+                evidenceType: nextEvidenceType
+              });
+            }}
           />
+          <div className="text-xs text-slate-500">
+            Upload PDF, Word, screenshots, text, spreadsheet, or archive/project files up to 25MB.
+          </div>
+          {draft.evidenceFile ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span>Selected file: {draft.evidenceFile.name}</span>
+              <button
+                className="btn-ghost px-2 py-1 text-xs"
+                type="button"
+                onClick={() => updateProgressDraft(task._id, { evidenceFile: null, evidenceAttachment: null })}
+              >
+                Remove file
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -288,6 +376,100 @@ const EmployeeDashboard = () => {
       </div>
     );
   };
+
+  const renderProofHistoryButton = (task, extraClassName = "") => {
+    const proofCount = (task?.progressLogs || []).filter(hasEvidenceReference).length;
+    return (
+      <button
+        className={`btn-ghost px-2 py-1 text-xs ${extraClassName}`.trim()}
+        type="button"
+        onClick={() => setProofHistoryTask(task)}
+      >
+        View proof history ({proofCount})
+      </button>
+    );
+  };
+
+  const getTaskStatusBadgeClass = (status) => {
+    if (status === "done") return "border-emerald-500/25 bg-emerald-500/10 text-emerald-200";
+    if (status === "in_progress") return "border-blue-500/25 bg-blue-500/10 text-blue-200";
+    return "border-slate-600/60 bg-slate-800/80 text-slate-200";
+  };
+
+  const getTaskStatusLabel = (status) => {
+    if (status === "in_progress") return "In Progress";
+    if (status === "done") return "Done";
+    return "Todo";
+  };
+
+  const renderTaskDetails = (task, compact = false) => (
+    <>
+      <div className="text-xs uppercase text-slate-500">Task Details</div>
+      <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
+        {task.description || "No details provided."}
+      </div>
+      <div className={`mt-5 grid gap-4 ${compact ? "" : "lg:grid-cols-[1.15fr_0.85fr]"}`.trim()}>
+        <div>
+          <div className="text-xs uppercase text-slate-500">Add Today's Progress</div>
+          <div className="mt-2">{renderProgressForm(task)}</div>
+          <div className="mt-4">
+            <TaskProgressReview review={task.progressReview} />
+          </div>
+        </div>
+        <div>
+          <div className="text-xs uppercase text-slate-500">Progress Timeline</div>
+          <div className="mt-2 grid gap-2">
+            {(task.progressLogs || []).length === 0 && (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-500">
+                No progress updates yet.
+              </div>
+            )}
+            {[...(task.progressLogs || [])].reverse().map((log, index) => {
+              const evidenceReference = getEvidenceReference(log);
+              const evidenceHref = resolveEvidenceUrl(evidenceReference);
+              const evidenceLabel = log?.evidenceAttachment?.filename || evidenceReference;
+              const verificationTone =
+                log?.verification?.status === "pass"
+                  ? "border-emerald-700/60 bg-emerald-950/70 text-emerald-100"
+                  : log?.verification?.status === "fail"
+                    ? "border-rose-700/60 bg-rose-950/70 text-rose-100"
+                    : "border-amber-700/60 bg-amber-950/60 text-amber-100";
+              return (
+              <div key={`${task._id}-progress-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                <div className="text-xs text-slate-500">{new Date(log.loggedAt).toLocaleString()}</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.workType}</span>
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.progressState}</span>
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.evidenceType}</span>
+                  {log?.verification?.status ? (
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] ${verificationTone}`}>
+                      {log.verification.status}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">Area: {log.affectedArea}</div>
+                <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">{log.note}</div>
+                {evidenceReference ? (
+                  <a
+                    className="mt-2 inline-block break-all text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                    href={evidenceHref}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {evidenceLabel}
+                  </a>
+                ) : null}
+                {log?.verification?.summary ? (
+                  <div className="mt-2 text-xs text-slate-400">{log.verification.summary}</div>
+                ) : null}
+              </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
 
   return (
     <div className="dashboard-page grid min-w-0 gap-6">
@@ -352,89 +534,155 @@ const EmployeeDashboard = () => {
       )}
 
       {active && (
-        <div className="card">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="card overflow-visible">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800/80 pb-5">
             <div className="min-w-0 flex-1">
-              <div className="text-sm text-slate-400">Current Task</div>
-              <div className="text-xl font-semibold">{active.title}</div>
-              <div className="text-sm text-slate-400">{active.description || "No details"}</div>
-              <div className="text-sm text-slate-500">Deadline: {formatDate(active.deadline)}</div>
-              <div className="text-sm text-slate-400">
-                Live Time: {formatDurationHours((active.timeSpent || 0) + Math.floor(activeElapsedSec / 60))}
+              <div className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Current Task</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <h2 className="min-w-0 text-2xl font-semibold text-slate-100">{active.title}</h2>
+                <span className={`rounded-full border px-3 py-1 text-xs font-medium ${getTaskStatusBadgeClass(active.status)}`}>
+                  {getTaskStatusLabel(active.status)}
+                </span>
               </div>
-              <div className="mt-3">
-                <div className="text-xs uppercase tracking-wide text-slate-500">Latest Progress</div>
-                <div className="mt-2">
+              <div className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                {active.description || "No task description has been added yet."}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-800/80 bg-slate-950/60 p-3 shadow-lg">
+              <TimerControls
+                running
+                onStart={() => changeStatus(active, "in_progress")}
+                onStop={() => changeStatus(active, "todo")}
+                onComplete={() => changeStatus(active, "done")}
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Deadline</div>
+              <div className="mt-1 text-base font-semibold text-slate-100">{formatDate(active.deadline)}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Live Time</div>
+              <div className="mt-1 text-base font-semibold text-slate-100">
+                {formatDurationHours((active.timeSpent || 0) + Math.floor(activeElapsedSec / 60))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Proof Submissions</div>
+              <div className="mt-1 text-base font-semibold text-slate-100">
+                {(active.progressLogs || []).filter(hasEvidenceReference).length}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Daily Progress</div>
+              <div className="mt-2">
+                <DailyProgressStatusBadge status={active.dailyProgressStatus} />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+            <div className="grid gap-5">
+              <section className="rounded-[1.5rem] border border-slate-800/80 bg-slate-950/45 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Latest Submission</div>
+                    <div className="mt-1 text-sm text-slate-400">
+                      Review your most recent update and attached proof before sending a new one.
+                    </div>
+                  </div>
+                  {renderProofHistoryButton(active, "px-3 py-1.5")}
+                </div>
+                <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
                   <TaskProgressSummary
                     latestProgressLog={active.latestProgressLog}
                     progressLogs={active.progressLogs}
                   />
                 </div>
-              </div>
-              <div className="mt-4">
-                <DailyProgressStatusBadge status={active.dailyProgressStatus} />
-              </div>
-              <div className="mt-4">
+              </section>
+
+              <section className="rounded-[1.5rem] border border-slate-800/80 bg-slate-950/45 p-5">
+                <div className="mb-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Submission Review</div>
+                  <div className="mt-1 text-sm text-slate-400">
+                    Automated checks compare today&apos;s proof with your full submission history.
+                  </div>
+                </div>
                 <TaskProgressReview review={active.progressReview} />
-              </div>
-              <div className="mt-4">{renderProgressForm(active)}</div>
+              </section>
             </div>
-            <TimerControls
-              running
-              onStart={() => changeStatus(active, "in_progress")}
-              onStop={() => changeStatus(active, "todo")}
-              onComplete={() => changeStatus(active, "done")}
-            />
+
+            <section className="rounded-[1.5rem] border border-slate-800/80 bg-slate-950/45 p-5">
+              <div className="border-b border-slate-800/80 pb-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Update Today&apos;s Progress</div>
+                <div className="mt-1 text-sm text-slate-400">
+                  Add a clear work note and proof so your manager can review the task professionally.
+                </div>
+              </div>
+              <div className="mt-5">{renderProgressForm(active)}</div>
+            </section>
           </div>
         </div>
       )}
 
-      <div id="tasks" className="card min-w-0 scroll-mt-6">
-        <div
-          className="table-scroll w-full overflow-x-auto overflow-y-hidden thin-scrollbar"
-          style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+      <div id="tasks" className="card dashboard-disclosure-card min-w-0 scroll-mt-6">
+        <button
+          className="dashboard-disclosure-trigger"
+          onClick={() => setTasksOpen((prev) => !prev)}
         >
-          <table className="min-w-[720px] w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-400">
-              <tr>
-                <th className="py-3 pr-4">Task</th>
-                <th className="py-3 pr-4">Role</th>
-                <th className="py-3 pr-4">Deadline</th>
-                <th className="py-3 pr-4">Time Spent</th>
-                <th className="py-3 pr-4">Latest Progress</th>
-                <th className="py-3 pr-4">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((task) => (
-                <React.Fragment key={task._id}>
-                  <tr className="border-t border-slate-800">
-                    <td className="py-3 pr-4 text-slate-200">
-                      <button
-                        className="flex items-center gap-2 text-left"
-                        onClick={() =>
-                          setTasks((prev) =>
-                            prev.map((item) => (item._id === task._id ? { ...item, _expanded: !item._expanded } : item))
-                          )
-                        }
-                      >
-                        <span className="text-xs text-slate-400">{task._expanded ? "▼" : "▶"}</span>
-                        <span>{task.title}</span>
-                      </button>
-                    </td>
-                    <td className="break-words py-3 pr-4 text-slate-200">{task.roleContribution}</td>
-                    <td className="break-words py-3 pr-4 text-slate-200">{task.deadlineLabel}</td>
-                    <td className="break-words py-3 pr-4 text-slate-200">{task.timeSpent}</td>
-                    <td className="min-w-[14rem] break-words py-3 pr-4 text-slate-200">
-                      <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
+          <div className="dashboard-disclosure-copy">
+            <h3 className="text-lg font-semibold">Tasks</h3>
+            <p className="text-sm text-slate-400">Track assigned work, progress updates, and current task status.</p>
+          </div>
+          <DisclosureIcon open={tasksOpen} />
+        </button>
+        {tasksOpen && (
+          <>
+            {isMobile ? (
+              <div className="mt-4 grid gap-4">
+                {rows.map((task) => (
+                  <div key={task._id} className="rounded-[1.5rem] border border-slate-200/10 bg-slate-950/35 p-4 shadow-sm">
+                    <button
+                      className="flex w-full items-start justify-between gap-3 text-left"
+                      onClick={() =>
+                        setTasks((prev) =>
+                          prev.map((item) => (item._id === task._id ? { ...item, _expanded: !item._expanded } : item))
+                        )
+                      }
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-base font-medium text-slate-100">{task.title}</div>
+                        <div className="mt-1 text-sm text-slate-400">{task.roleContribution || "No role provided"}</div>
+                      </div>
+                      <span className="text-xs text-slate-400">{task._expanded ? "v" : ">"}</span>
+                    </button>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Deadline</div>
+                        <div className="mt-1 text-sm text-slate-200">{task.deadlineLabel}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Time Spent</div>
+                        <div className="mt-1 text-sm text-slate-200">{task.timeSpent}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Latest Progress</div>
+                      <div className="mt-2">
+                        <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
+                      </div>
+                      <div className="mt-2">{renderProofHistoryButton(task)}</div>
                       <div className="mt-2">
                         <DailyProgressStatusBadge status={task.dailyProgressStatus} />
                       </div>
                       <TaskProgressReview review={task.progressReview} compact />
-                    </td>
-                    <td className="py-3 pr-4 text-slate-200">
+                    </div>
+                    <div className="mt-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
                       <select
-                        className="rounded-lg bg-slate-900 px-3 py-2 text-sm"
+                        className="mt-2 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm"
                         value={task.status}
                         onChange={(e) => changeStatus(task, e.target.value)}
                       >
@@ -442,64 +690,86 @@ const EmployeeDashboard = () => {
                         <option value="in_progress">In Progress</option>
                         <option value="done">Done</option>
                       </select>
-                    </td>
-                  </tr>
-                  {task._expanded && (
-                    <tr className="border-t border-slate-800 bg-slate-900/30">
-                      <td className="py-3 pr-4 text-slate-300" colSpan={6}>
-                        <div className="text-xs uppercase text-slate-500">Task Details</div>
-                        <div className="mt-2 text-sm text-slate-200 whitespace-pre-wrap">
-                          {task.description || "No details provided."}
-                        </div>
-                        <div className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-                          <div>
-                            <div className="text-xs uppercase text-slate-500">Add Today's Progress</div>
-                            <div className="mt-2">{renderProgressForm(task)}</div>
-                            <div className="mt-4">
-                              <TaskProgressReview review={task.progressReview} />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs uppercase text-slate-500">Progress Timeline</div>
-                            <div className="mt-2 grid gap-2">
-                              {(task.progressLogs || []).length === 0 && (
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-500">
-                                  No progress updates yet.
-                                </div>
-                              )}
-                              {[...(task.progressLogs || [])].reverse().map((log, index) => (
-                                <div key={`${task._id}-progress-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
-                                  <div className="text-xs text-slate-500">{new Date(log.loggedAt).toLocaleString()}</div>
-                                  <div className="mt-2 flex flex-wrap gap-1.5">
-                                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.workType}</span>
-                                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.progressState}</span>
-                                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.evidenceType}</span>
-                                  </div>
-                                  <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">Area: {log.affectedArea}</div>
-                                  <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">{log.note}</div>
-                                  {log.evidenceUrl ? (
-                                    <a
-                                      className="mt-2 inline-block break-all text-xs text-blue-400 hover:text-blue-300 hover:underline"
-                                      href={log.evidenceUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      {log.evidenceUrl}
-                                    </a>
-                                  ) : null}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
+                    </div>
+                    {task._expanded && (
+                      <div className="mt-5 border-t border-slate-800 pt-4">
+                        {renderTaskDetails(task, true)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                className="table-scroll mt-4 w-full overflow-x-auto overflow-y-hidden thin-scrollbar"
+                style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+              >
+                <table className="min-w-[720px] w-full text-left text-sm">
+                  <thead className="text-xs uppercase text-slate-400">
+                    <tr>
+                      <th className="py-3 pr-4">Task</th>
+                      <th className="py-3 pr-4">Role</th>
+                      <th className="py-3 pr-4">Deadline</th>
+                      <th className="py-3 pr-4">Time Spent</th>
+                      <th className="py-3 pr-4">Latest Progress</th>
+                      <th className="py-3 pr-4">Status</th>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </thead>
+                  <tbody>
+                    {rows.map((task) => (
+                      <React.Fragment key={task._id}>
+                        <tr className="border-t border-slate-800">
+                          <td className="py-3 pr-4 text-slate-200">
+                            <button
+                              className="flex items-center gap-2 text-left"
+                              onClick={() =>
+                                setTasks((prev) =>
+                                  prev.map((item) => (item._id === task._id ? { ...item, _expanded: !item._expanded } : item))
+                                )
+                              }
+                            >
+                              <span className="text-xs text-slate-400">{task._expanded ? "v" : ">"}</span>
+                              <span>{task.title}</span>
+                            </button>
+                          </td>
+                          <td className="break-words py-3 pr-4 text-slate-200">{task.roleContribution}</td>
+                          <td className="break-words py-3 pr-4 text-slate-200">{task.deadlineLabel}</td>
+                          <td className="break-words py-3 pr-4 text-slate-200">{task.timeSpent}</td>
+                          <td className="min-w-[14rem] break-words py-3 pr-4 text-slate-200">
+                            <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
+                            <div className="mt-2">{renderProofHistoryButton(task)}</div>
+                            <div className="mt-2">
+                              <DailyProgressStatusBadge status={task.dailyProgressStatus} />
+                            </div>
+                            <TaskProgressReview review={task.progressReview} compact />
+                          </td>
+                          <td className="py-3 pr-4 text-slate-200">
+                            <select
+                              className="rounded-lg bg-slate-900 px-3 py-2 text-sm"
+                              value={task.status}
+                              onChange={(e) => changeStatus(task, e.target.value)}
+                            >
+                              <option value="todo">Todo</option>
+                              <option value="in_progress">In Progress</option>
+                              <option value="done">Done</option>
+                            </select>
+                          </td>
+                        </tr>
+                        {task._expanded && (
+                          <tr className="border-t border-slate-800 bg-slate-900/30">
+                            <td className="py-3 pr-4 text-slate-300" colSpan={6}>
+                              {renderTaskDetails(task)}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -534,6 +804,13 @@ const EmployeeDashboard = () => {
           <div>In Progress: {tasks.filter((t) => t.status === "in_progress").length}</div>
         </div>
       </div>
+      <Modal
+        open={Boolean(proofHistoryTask)}
+        title={proofHistoryTask ? `Proof History: ${proofHistoryTask.title}` : "Proof History"}
+        onClose={() => setProofHistoryTask(null)}
+      >
+        <TaskProofHistory task={proofHistoryTask} />
+      </Modal>
     </div>
   );
 };

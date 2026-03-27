@@ -34,11 +34,11 @@ const Login = ({ role }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (!portalRole) {
+      if (role && !portalRole) {
         setError("Select a role to continue.");
         return;
       }
-      const payload = { ...form, role: portalRole };
+      const payload = portalRole ? { ...form, role: portalRole } : form;
       const data = await login(payload);
       if (portalRole && data.user.role !== portalRole) {
         setError(`${portalLabel} portal only. Use the correct login page.`);
@@ -55,7 +55,7 @@ const Login = ({ role }) => {
 
   const handleGoogleLogin = async (credential) => {
     try {
-      const enforceRole = Boolean(role);
+      const enforceRole = Boolean(portalRole);
       const data = await googleAuth({
         credential,
         mode: "login",

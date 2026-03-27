@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { listProjects } from "../api/projects.js";
-import { listTasks, createTask, updateTask } from "../api/tasks.js";
+import { listTasks, getTask, createTask, updateTask, recheckTaskProof } from "../api/tasks.js";
 import api from "../api/client.js";
 import StatCard from "../components/StatCard.jsx";
-import Table from "../components/Table.jsx";
 import Modal from "../components/Modal.jsx";
 import { formatDate, formatDurationHours } from "../utils/date.js";
 import { createSocket } from "../utils/socket.js";
@@ -18,6 +17,8 @@ import PerformanceScorecard from "../components/PerformanceScorecard.jsx";
 import TaskProgressSummary from "../components/TaskProgressSummary.jsx";
 import TaskProgressReview from "../components/TaskProgressReview.jsx";
 import DailyProgressStatusBadge from "../components/DailyProgressStatusBadge.jsx";
+import TaskProofHistory from "../components/TaskProofHistory.jsx";
+import DisclosureIcon from "../components/DisclosureIcon.jsx";
 import { listMyEmailUnreadCount } from "../api/emails.js";
 import { listMyNotificationUnreadCount } from "../api/notifications.js";
 import { getUnreadForumCount } from "../api/forum.js";
@@ -53,6 +54,10 @@ const ManagerDashboard = () => {
     const raw = localStorage.getItem("swms_manager_filters");
     return raw ? JSON.parse(raw) : [];
   });
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false
+  );
   const totalTimeSpent = tasks.reduce((sum, task) => sum + (task.timeSpent || 0), 0);
   const [deadlineEdits, setDeadlineEdits] = useState({});
   const [open, setOpen] = useState(false);
@@ -64,6 +69,9 @@ const ManagerDashboard = () => {
   const [dragHoverStage, setDragHoverStage] = useState("");
   const [touchDragCard, setTouchDragCard] = useState(null);
   const touchDragRef = useRef(null);
+  const [proofHistoryTask, setProofHistoryTask] = useState(null);
+  const [proofHistoryLoading, setProofHistoryLoading] = useState(false);
+  const [recheckingEntryId, setRecheckingEntryId] = useState("");
   const [form, setForm] = useState({
     projectId: "",
     userId: "",
@@ -88,11 +96,6 @@ const ManagerDashboard = () => {
     });
   };
 
-  const loadTemplates = async () => {
-    const templateData = await listTaskTemplates();
-    setTemplates(templateData);
-  };
-
   const loadBadges = async () => {
     const [emailsRes, notifRes, forumRes] = await Promise.all([
       listMyEmailUnreadCount(),
@@ -107,26 +110,70 @@ const ManagerDashboard = () => {
 
   useEffect(() => {
     loadOverview();
-    loadTemplates();
+    let timeoutId;
+    let idleId;
+    let cancelled = false;
+
+    const runLoadTemplates = async () => {
+      try {
+        const templateData = await listTaskTemplates();
+        if (!cancelled) {
+          setTemplates(templateData);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setTemplates([]);
+        }
+      }
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(runLoadTemplates, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(runLoadTemplates, 350);
+    }
+
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined" && idleId && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [id]);
   useEffect(() => {
     loadBadges();
-    const timer = setInterval(loadBadges, 15000);
+    const timer = setInterval(loadBadges, 30000);
     return () => clearInterval(timer);
   }, [id]);
   useEffect(() => {
     const socket = createSocket();
     socket.on("task:created", () => {
       loadOverview();
-      loadBadges();
     });
     socket.on("task:updated", () => {
       loadOverview();
-      loadBadges();
     });
     socket.on("project:updated", loadOverview);
     return () => socket.disconnect();
   }, [id]);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const handleChange = (event) => setIsMobile(event.matches);
+
+    setIsMobile(mediaQuery.matches);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   const taskColumns = useMemo(
     () => [
@@ -149,13 +196,74 @@ const ManagerDashboard = () => {
     if (filters.stage && (task.stage || "Planning") !== filters.stage) return false;
     return true;
   });
+  const selectedTaskCount = selectedTaskIds.length;
+  const activeTaskCount = filteredTasks.filter((task) => task.status === "in_progress").length;
+  const reviewTaskCount = filteredTasks.filter((task) => task.progressReview?.riskLevel === "high").length;
+  const dueSoonTaskCount = filteredTasks.filter((task) => {
+    const deadline = dayjs(task.deadline);
+    if (!deadline.isValid() || task.status === "done") return false;
+    const daysLeft = deadline.startOf("day").diff(dayjs().startOf("day"), "day");
+    return daysLeft >= 0 && daysLeft <= 3;
+  }).length;
+
+  const mergeTaskUpdate = (updatedTask) => {
+    setTasks((prev) => prev.map((task) => (task._id === updatedTask._id ? { ...task, ...updatedTask } : task)));
+  };
+
+  const handleRecheckProof = async (taskId, entryId) => {
+    if (!taskId || !entryId) return;
+    setRecheckingEntryId(entryId);
+    try {
+      const updatedTask = await recheckTaskProof(taskId, entryId);
+      mergeTaskUpdate(updatedTask);
+      setProofHistoryTask((current) =>
+        current && String(current._id) === String(updatedTask._id) ? updatedTask : current
+      );
+    } finally {
+      setRecheckingEntryId("");
+    }
+  };
+
+  const getEntityId = (value) => {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "object" && value._id) return String(value._id);
+    return String(value);
+  };
+
+  const getEffectiveDeadlineInput = (task) => {
+    const originalDeadline = task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "";
+    const editedDeadline = deadlineEdits[task._id];
+    return editedDeadline && dayjs(editedDeadline).isValid() ? editedDeadline : originalDeadline;
+  };
+
+  const formatTaskStatusLabel = (status) =>
+    String(status || "todo")
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+  const getTaskStatusToneClass = (status) =>
+    status === "done"
+      ? "border-emerald-950 bg-emerald-950/90 text-emerald-50"
+      : status === "in_progress"
+        ? "border-sky-950 bg-sky-950/90 text-sky-50"
+        : status === "todo"
+          ? "border-slate-900 bg-slate-900/90 text-slate-100"
+          : "border-slate-900 bg-slate-900/90 text-slate-100";
 
   const taskRows = filteredTasks.map((task) => {
     const user = team.find((member) => member._id === task.userId);
-    const editValue = deadlineEdits[task._id] ?? (task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "");
+    const project = projects.find((item) => getEntityId(item._id) === getEntityId(task.projectId));
+    const originalDeadline = task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "";
+    const editValue = getEffectiveDeadlineInput(task);
+    const hasDeadlineEdit = editValue !== originalDeadline;
     const lastProgressAt = task.lastProgressAt ? dayjs(task.lastProgressAt) : null;
     const isMissingTodayProgress =
       task.status === "in_progress" && (!lastProgressAt || !lastProgressAt.isSame(dayjs(), "day"));
+    const proofCount = Number(task.proofSubmissionCount || 0);
+    const statusToneClass = getTaskStatusToneClass(task.status);
     return {
       ...task,
       select: (
@@ -170,85 +278,144 @@ const ManagerDashboard = () => {
         />
       ),
       title: (
-        <div className="min-w-[16rem] max-w-[26rem]">
-          <div className="font-medium text-slate-200">{task.title}</div>
+        <div className="min-w-[13rem] max-w-[20rem]">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-base font-semibold text-slate-100">{task.title}</div>
+            <span className="rounded-full border border-slate-700/80 bg-slate-900/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
+              {task.stage || "Planning"}
+            </span>
+          </div>
           {task.description ? (
-            <div className="mt-1 text-xs leading-5 text-slate-400">
+            <div
+              className="mt-1.5 text-xs leading-5 text-slate-400"
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+            >
               {task.description}
             </div>
           ) : null}
-        </div>
-      ),
-      assignee: user?.name || "-",
-      progress: (
-        <div className="min-w-[16rem]">
-          <TaskProgressSummary latestProgressLog={task.latestProgressLog} />
-          <div className="mt-2">
-            <DailyProgressStatusBadge status={task.dailyProgressStatus} />
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            {project?.name ? <span>{project.name}</span> : null}
+            {task.roleContribution ? (
+              <span className="rounded-full border border-slate-800 bg-slate-950/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+                {task.roleContribution}
+              </span>
+            ) : null}
           </div>
-          <TaskProgressReview review={task.progressReview} compact />
         </div>
       ),
-      timeSpent: formatDurationHours(task.timeSpent || 0),
+      assignee: (
+        <div className="min-w-[8rem] rounded-xl border border-slate-800/80 bg-slate-950/40 px-3 py-2">
+          <div className="font-medium text-slate-100">{user?.name || "-"}</div>
+          <div className="mt-0.5 text-xs text-slate-400">{user?.teamRole || task.roleContribution || "No role set"}</div>
+        </div>
+      ),
+      progress: (
+        <div className="min-w-[13rem] rounded-xl border border-slate-800/80 bg-slate-950/40 p-2">
+          <TaskProgressSummary latestProgressLog={task.latestProgressLog} compact />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              className="btn-ghost px-2 py-1 text-[11px]"
+              type="button"
+              onClick={async () => {
+                setProofHistoryLoading(true);
+                setProofHistoryTask({ _id: task._id, title: task.title, progressLogs: [] });
+                try {
+                  const fullTask = await getTask(task._id);
+                  setProofHistoryTask(fullTask);
+                } finally {
+                  setProofHistoryLoading(false);
+                }
+              }}
+            >
+              View proof history ({proofCount})
+            </button>
+            {task.latestProgressLog?.entryId ? (
+              <button
+                className="btn-ghost px-2 py-1 text-[11px]"
+                type="button"
+                disabled={recheckingEntryId === task.latestProgressLog.entryId}
+                onClick={() => handleRecheckProof(task._id, task.latestProgressLog.entryId)}
+              >
+                {recheckingEntryId === task.latestProgressLog.entryId ? "Rechecking..." : "Recheck proof"}
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-2">
+            <DailyProgressStatusBadge status={task.dailyProgressStatus} showMessage={false} />
+          </div>
+          <div className="mt-2">
+            <TaskProgressReview review={task.progressReview} compact />
+          </div>
+        </div>
+      ),
+      timeSpent: (
+        <div className="min-w-[7rem] rounded-xl border border-slate-800/80 bg-slate-950/40 px-3 py-2.5">
+          <div className="text-sm font-semibold text-slate-100">{formatDurationHours(task.timeSpent || 0)}</div>
+          <div className="mt-1 text-[11px] text-slate-500">
+            {task.lastProgressAt ? `Updated ${dayjs(task.lastProgressAt).format("MMM D")}` : "No updates yet"}
+          </div>
+        </div>
+      ),
       status: (
-        <div className="min-w-[10rem]">
-          <div className="font-medium text-slate-200">{task.status}</div>
+        <div className="min-w-[8rem] rounded-xl border border-slate-800/80 bg-slate-950/40 px-3 py-2">
+          <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${statusToneClass}`}>
+            {formatTaskStatusLabel(task.status)}
+          </div>
           {isMissingTodayProgress ? (
-            <div className="mt-1 text-xs text-amber-300">Employee has not added today&apos;s progress.</div>
+            <div className="mt-1 text-[11px] text-amber-300">No progress today.</div>
           ) : null}
           {task.progressReview?.riskLevel === "high" ? (
-            <div className="mt-1 text-xs text-rose-300">Recent progress needs manager review.</div>
+            <div className="mt-1 text-[11px] text-rose-300">Needs manager review.</div>
           ) : null}
         </div>
       ),
       deadline: (
-        <div className="flex items-center gap-2">
+        <div className="min-w-[10rem] rounded-xl border border-slate-800/80 bg-slate-950/40 p-2">
           <input
-            className="rounded-lg bg-slate-900 px-2 py-1 text-xs"
+            className="w-full rounded-lg bg-slate-900 px-3 py-1.5 text-xs"
             type="date"
             value={editValue}
             onChange={(e) =>
               setDeadlineEdits((prev) => ({ ...prev, [task._id]: e.target.value }))
             }
           />
-          <button
-            className="btn-ghost px-2 py-1 text-xs"
-            onClick={async () => {
-              if (!editValue) return;
-              await updateTask(task._id, { deadline: editValue });
-              setDeadlineEdits((prev) => {
-                const next = { ...prev };
-                delete next[task._id];
-                return next;
-              });
-              loadOverview();
-            }}
-          >
-            Save
-          </button>
-          <button
-            className="btn-ghost px-2 py-1 text-xs"
-            onClick={() =>
-              setDeadlineEdits((prev) => {
-                const next = { ...prev };
-                delete next[task._id];
-                return next;
-              })
-            }
-          >
-            Cancel
-          </button>
+          {hasDeadlineEdit ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                className="btn-ghost px-2 py-1 text-xs"
+                onClick={async () => {
+                  if (!editValue) return;
+                  const updatedTask = await updateTask(task._id, { deadline: editValue });
+                  mergeTaskUpdate(updatedTask);
+                  setDeadlineEdits((prev) => {
+                    const next = { ...prev };
+                    delete next[task._id];
+                    return next;
+                  });
+                }}
+              >
+                Save
+              </button>
+              <button
+                className="btn-ghost px-2 py-1 text-xs"
+                onClick={() =>
+                  setDeadlineEdits((prev) => {
+                    const next = { ...prev };
+                    delete next[task._id];
+                    return next;
+                  })
+                }
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 text-[10px] text-slate-500">{formatDate(task.deadline)}</div>
+          )}
         </div>
       )
     };
   });
-
-  const getEntityId = (value) => {
-    if (!value) return "";
-    if (typeof value === "string") return value;
-    if (typeof value === "object" && value._id) return String(value._id);
-    return String(value);
-  };
 
   const sameStage = (left, right) =>
     String(left || "Planning").trim().toLowerCase() === String(right || "Planning").trim().toLowerCase();
@@ -332,19 +499,44 @@ const ManagerDashboard = () => {
     };
   }, [touchDragCard]);
 
-  const ganttTasks = projectTasks.map((task) => {
-    const start = task.startTime ? dayjs(task.startTime) : dayjs(task.createdAt);
-    const end = dayjs(task.deadline);
-    return { ...task, start, end };
-  });
+  const deadlineChartToday = dayjs().startOf("day");
 
-  const ganttRange = (() => {
-    if (ganttTasks.length === 0) return null;
-    const minStart = ganttTasks.reduce((min, t) => (t.start.isBefore(min) ? t.start : min), ganttTasks[0].start);
-    const maxEnd = ganttTasks.reduce((max, t) => (t.end.isAfter(max) ? t.end : max), ganttTasks[0].end);
-    const totalDays = Math.max(maxEnd.diff(minStart, "day"), 1);
-    return { minStart, maxEnd, totalDays };
-  })();
+  const deadlineChartTasks = [...tasks]
+    .map((task) => {
+      const assignedAt = dayjs(task.createdAt || task.updatedAt || task.deadline).startOf("day");
+      const deadlineSource = getEffectiveDeadlineInput(task) || task.deadline;
+      const deadlineAt = dayjs(deadlineSource).endOf("day");
+      const projectName = projects.find((project) => String(project._id) === String(getEntityId(task.projectId)))?.name || "-";
+      const totalWindowDays = Math.max(deadlineAt.startOf("day").diff(assignedAt.startOf("day"), "day"), 1);
+      const activeWindowStart = assignedAt.isAfter(deadlineChartToday) ? assignedAt.startOf("day") : deadlineChartToday;
+      const remainingWindowDays = Math.max(deadlineAt.startOf("day").diff(activeWindowStart, "day"), 0);
+      const daysRemaining = Math.max(deadlineAt.startOf("day").diff(deadlineChartToday, "day"), 0);
+      const originalDeadline = task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "";
+      return {
+        ...task,
+        assignedAt: assignedAt.isValid() ? assignedAt : null,
+        deadlineAt: deadlineAt.isValid() ? deadlineAt : null,
+        totalWindowDays,
+        remainingWindowDays,
+        remainingRatio: Math.max(Math.min(remainingWindowDays / totalWindowDays, 1), 0),
+        daysRemaining,
+        projectName,
+        hasPendingDeadlineEdit: Boolean(deadlineSource && deadlineSource !== originalDeadline),
+        assigneeName: team.find((member) => member._id === task.userId)?.name || "-"
+      };
+    })
+    .filter((task) => task.assignedAt?.isValid() && task.deadlineAt?.isValid())
+    .sort((left, right) => {
+      const assignedDiff = right.assignedAt.valueOf() - left.assignedAt.valueOf();
+      if (assignedDiff !== 0) return assignedDiff;
+      return right.deadlineAt.valueOf() - left.deadlineAt.valueOf();
+    });
+
+  const deadlineChartMaxDeadline = deadlineChartTasks.reduce((max, task) => {
+    if (!task.deadlineAt?.isValid()) return max;
+    if (!max || task.deadlineAt.isAfter(max)) return task.deadlineAt;
+    return max;
+  }, null);
 
   const handleAssign = async (e) => {
     e.preventDefault();
@@ -407,6 +599,10 @@ const ManagerDashboard = () => {
         <StatCard label="Active Projects" value={projects.length} />
         <StatCard label="Total Tasks" value={tasks.length} />
         <StatCard label="Time Spent" value={formatDurationHours(totalTimeSpent)} />
+      </div>
+
+      <div id="tasks-search" className="scroll-mt-6">
+        <GlobalSearch />
       </div>
 
       <div id="team" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
@@ -485,87 +681,200 @@ const ManagerDashboard = () => {
         </div>
       </div>
 
-      <div id="tasks" className="scroll-mt-6">
-        <GlobalSearch />
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <select
-            className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-            value={taskScope}
-            onChange={(e) => setTaskScope(e.target.value)}
-          >
-            <option value="team">All Team Tasks</option>
-            <option value="mine">Tasks Assigned To Me</option>
-          </select>
-          <select
-            className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-            value={filters.status}
-            onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-          >
-            <option value="">All Status</option>
-            <option value="todo">Todo</option>
-            <option value="in_progress">In Progress</option>
-            <option value="done">Done</option>
-          </select>
-          <select
-            className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-            value={filters.stage}
-            onChange={(e) => setFilters((prev) => ({ ...prev, stage: e.target.value }))}
-          >
-            <option value="">All Stages</option>
-            {kanbanStages.map((stage) => (
-              <option key={stage} value={stage}>{stage}</option>
-            ))}
-          </select>
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              const name = prompt("Save filter name?");
-              if (!name) return;
-              const next = [...savedFilters, { name, filters }];
-              setSavedFilters(next);
-              localStorage.setItem("swms_manager_filters", JSON.stringify(next));
-            }}
-          >
-            Save Filter
-          </button>
-          <select
-            className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
-            onChange={(e) => {
-              const selected = savedFilters.find((f) => f.name === e.target.value);
-              if (selected) setFilters(selected.filters);
-            }}
-          >
-            <option value="">Load Saved Filter</option>
-            {savedFilters.map((f) => (
-              <option key={f.name} value={f.name}>{f.name}</option>
-            ))}
-          </select>
+      <div id="tasks" className="card dashboard-disclosure-card scroll-mt-6">
+        <button
+          className="dashboard-disclosure-trigger"
+          onClick={() => setTasksOpen((prev) => !prev)}
+        >
+          <div className="dashboard-disclosure-copy">
+            <h3 className="text-lg font-semibold">Tasks</h3>
+            <p className="text-sm text-slate-400">Review team tasks, filters, progress, and bulk actions.</p>
+          </div>
+          <DisclosureIcon open={tasksOpen} />
+        </button>
+        {tasksOpen && (
+          <>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Visible Tasks</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-100">{filteredTasks.length}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">In Progress</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-100">{activeTaskCount}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Needs Review</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-100">{reviewTaskCount}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Due Soon</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-100">{dueSoonTaskCount}</div>
+          </div>
         </div>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <button
-            className="btn-ghost"
-            onClick={async () => {
-              if (selectedTaskIds.length === 0) return;
-              await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "in_progress" } });
-              setSelectedTaskIds([]);
-              loadOverview();
-            }}
-          >
-            Bulk In Progress
-          </button>
-          <button
-            className="btn-ghost"
-            onClick={async () => {
-              if (selectedTaskIds.length === 0) return;
-              await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "done" } });
-              setSelectedTaskIds([]);
-              loadOverview();
-            }}
-          >
-            Bulk Done
-          </button>
+        <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+          <div className="rounded-[1.5rem] border border-slate-800/80 bg-slate-950/45 p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">View & Filters</div>
+            <div className="mt-1 text-sm text-slate-400">Refine the task list by ownership, status, and workflow stage.</div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <select
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                value={taskScope}
+                onChange={(e) => setTaskScope(e.target.value)}
+              >
+                <option value="team">All Team Tasks</option>
+                <option value="mine">Tasks Assigned To Me</option>
+              </select>
+              <select
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                value={filters.status}
+                onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
+              >
+                <option value="">All Status</option>
+                <option value="todo">Todo</option>
+                <option value="in_progress">In Progress</option>
+                <option value="done">Done</option>
+              </select>
+              <select
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                value={filters.stage}
+                onChange={(e) => setFilters((prev) => ({ ...prev, stage: e.target.value }))}
+              >
+                <option value="">All Stages</option>
+                {kanbanStages.map((stage) => (
+                  <option key={stage} value={stage}>{stage}</option>
+                ))}
+              </select>
+              <button
+                className="btn-ghost"
+                onClick={() => {
+                  const name = prompt("Save filter name?");
+                  if (!name) return;
+                  const next = [...savedFilters, { name, filters }];
+                  setSavedFilters(next);
+                  localStorage.setItem("swms_manager_filters", JSON.stringify(next));
+                }}
+              >
+                Save Filter
+              </button>
+              <select
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm"
+                onChange={(e) => {
+                  const selected = savedFilters.find((f) => f.name === e.target.value);
+                  if (selected) setFilters(selected.filters);
+                }}
+              >
+                <option value="">Load Saved Filter</option>
+                {savedFilters.map((f) => (
+                  <option key={f.name} value={f.name}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="rounded-[1.5rem] border border-slate-800/80 bg-slate-950/45 p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Bulk Actions</div>
+            <div className="mt-1 text-sm text-slate-400">
+              {selectedTaskCount > 0
+                ? `${selectedTaskCount} task${selectedTaskCount === 1 ? "" : "s"} selected for manager actions.`
+                : "Select tasks from the list to update multiple assignments at once."}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                className="btn-ghost"
+                onClick={async () => {
+                  if (selectedTaskIds.length === 0) return;
+                  await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "in_progress" } });
+                  setSelectedTaskIds([]);
+                  loadOverview();
+                }}
+              >
+                Bulk In Progress
+              </button>
+              <button
+                className="btn-ghost"
+                onClick={async () => {
+                  if (selectedTaskIds.length === 0) return;
+                  await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "done" } });
+                  setSelectedTaskIds([]);
+                  loadOverview();
+                }}
+              >
+                Bulk Done
+              </button>
+            </div>
+          </div>
         </div>
-        <Table columns={taskColumns} data={taskRows} />
+        {isMobile ? (
+          <div className="mt-4 grid gap-4">
+            {taskRows.map((task) => (
+              <div key={task._id} className="rounded-[1.5rem] border border-slate-200/10 bg-slate-950/35 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2">{task.title}</div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Assignee</div>
+                    <div className="mt-1 text-sm text-slate-200">{task.assignee}</div>
+                  </div>
+                  <div className="shrink-0 pt-1">{task.select}</div>
+                </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Deadline</div>
+                    <div className="mt-2">{task.deadline}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Time Spent</div>
+                    <div className="mt-2 text-sm text-slate-200">{task.timeSpent}</div>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Latest Progress</div>
+                  <div className="mt-2">{task.progress}</div>
+                </div>
+                <div className="mt-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
+                  <div className="mt-2">{task.status}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-5 rounded-[1.75rem] border border-slate-800/80 bg-slate-950/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Task Operations</div>
+                <div className="mt-1 text-xs text-slate-500">Review assignee activity, proof quality, deadlines, and current delivery status.</div>
+              </div>
+              <div className="text-xs text-slate-500">{filteredTasks.length} visible task{filteredTasks.length === 1 ? "" : "s"}</div>
+            </div>
+            <div
+              className="table-scroll mt-4 w-full overflow-x-auto overflow-y-hidden thin-scrollbar"
+              style={{ touchAction: "pan-x pan-y", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+            >
+              <table className="min-w-[1080px] w-full text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    {taskColumns.map((col) => (
+                      <th key={col.key} className="py-3 pr-4">{col.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {taskRows.map((row) => (
+                    <tr key={row.id || row._id} className="border-t border-slate-800/80">
+                      {taskColumns.map((col) => (
+                        <td key={col.key} className="align-top py-3 pr-4 text-slate-200">
+                          {row[col.key]}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+          </>
+        )}
       </div>
 
       <div id="kanban" className="card scroll-mt-6">
@@ -867,29 +1176,187 @@ const ManagerDashboard = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">Gantt Timeline</h3>
-            <p className="text-sm text-slate-400">Project task timeline overview.</p>
+            <p className="text-sm text-slate-400">Each blue bar shows how much time is left between today and that task&apos;s deadline.</p>
           </div>
           <div className="text-xs text-slate-500">
-            {ganttRange
-              ? `${ganttRange.minStart.format("MMM D")} - ${ganttRange.maxEnd.format("MMM D")}`
+            {deadlineChartTasks.length > 0 && deadlineChartMaxDeadline
+              ? `Today ${deadlineChartToday.format("MMM D")} - Latest deadline ${deadlineChartMaxDeadline.format("MMM D, YYYY")}`
               : "No tasks"}
           </div>
         </div>
+        <div className="mt-4 space-y-4">
+          {deadlineChartTasks.map((task) => {
+            const lineWidth = task.remainingRatio > 0 ? Math.max(task.remainingRatio * 100, 3) : 0;
+
+            return (
+              <div key={task._id} className="grid gap-2 sm:grid-cols-[220px_1fr] sm:items-center sm:gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-200">{task.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">{task.assigneeName} | {task.projectName}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Assigned {task.assignedAt.format("MMM D, YYYY")} | Deadline {task.deadlineAt.format("MMM D, YYYY")} | {task.daysRemaining} days left of {task.totalWindowDays}
+                  </div>
+                  {task.hasPendingDeadlineEdit ? (
+                    <div className="mt-1 text-[11px] text-amber-300">Previewing unsaved deadline change</div>
+                  ) : null}
+                </div>
+                <div className="relative h-6">
+                  <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-800/70" />
+                  {lineWidth > 0 ? (
+                    <div
+                      className="absolute top-1/2 h-3 -translate-y-1/2 rounded-full bg-brand-500 transition-[width] duration-300 ease-out"
+                      style={{ left: "0%", width: `${lineWidth}%` }}
+                      title={`${task.title}: ${task.daysRemaining} days left until ${task.deadlineAt.format("MMM D, YYYY")}`}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          {deadlineChartTasks.length === 0 ? (
+            <div className="text-sm text-slate-500">No tasks for selected project.</div>
+          ) : null}
+        </div>
+        {false ? (
+        <div className="mt-4 space-y-4">
+          {deadlineChartTasks.map((task) => {
+            if (!deadlineChartRange) return null;
+            const assignedOffset = Math.max(task.assignedAt.diff(deadlineChartRange.minDate, "day"), 0);
+            const deadlineOffset = Math.max(task.deadlineAt.diff(deadlineChartRange.minDate, "day"), 0);
+            const assignedLeft = (assignedOffset / deadlineChartRange.totalDays) * 100;
+            const deadlineLeft = (deadlineOffset / deadlineChartRange.totalDays) * 100;
+            const lineLeft = Math.min(assignedLeft, deadlineLeft);
+            const lineWidth = Math.max(Math.abs(deadlineLeft - assignedLeft), 3);
+
+            return (
+              <div key={task._id} className="grid gap-2 sm:grid-cols-[220px_1fr] sm:items-center sm:gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-200">{task.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">{task.assigneeName}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Deadline {task.deadlineAt.format("MMM D, YYYY")}
+                    {task.completedAt?.isValid() ? ` · Completed ${task.completedAt.format("MMM D, YYYY")}` : " · Not completed"}
+                  </div>
+                </div>
+                <div className="relative h-6">
+                  <div className="absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-slate-800/70" />
+                  {segmentLeft !== null ? (
+                    <div
+                      className={`absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full ${segmentTone}`}
+                      style={{ left: `${segmentLeft}%`, width: `${segmentWidth}%` }}
+                    />
+                  ) : null}
+                  <div
+                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-200 bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.14)]"
+                    style={{ left: `${deadlineLeft}%` }}
+                    title={`Deadline: ${task.deadlineAt.format("MMM D, YYYY")}`}
+                  />
+                  {task.completedAt?.isValid() ? (
+                    <div
+                      className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-emerald-100 bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.16)]"
+                      style={{ left: `${completedLeft}%` }}
+                      title={`Completed: ${task.completedAt.format("MMM D, YYYY")}`}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          {deadlineChartTasks.length === 0 ? (
+            <div className="text-sm text-slate-500">No tasks for selected project.</div>
+          ) : null}
+        </div>
+        ) : null}
+        {false ? (
+        <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
+          {roadmapGroups.map((group) => (
+            <div
+              key={group.key}
+              className="min-w-[260px] max-w-[280px] flex-1 rounded-2xl border border-slate-800 bg-slate-950/35 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {group.date.isValid() ? group.date.format("MMM D, YYYY") : "No deadline"}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}
+                  </div>
+                </div>
+                <div className="rounded-full border border-slate-700 px-2 py-1 text-[11px] uppercase tracking-wide text-slate-300">
+                  Due
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {group.tasks.map((task) => (
+                  <div key={task._id} className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-slate-100">{task.title}</div>
+                        <div className="mt-1 text-xs text-slate-500">{task.assigneeName}</div>
+                      </div>
+                      <div className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-medium ${getTaskStatusToneClass(task.status)}`}>
+                        {formatTaskStatusLabel(task.status)}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1 text-xs text-slate-400">
+                      <div>Planned start: {task.plannedStart?.isValid() ? task.plannedStart.format("MMM D, YYYY") : "-"}</div>
+                      <div>Deadline: {task.plannedEnd?.isValid() ? task.plannedEnd.format("MMM D, YYYY") : "-"}</div>
+                      <div>Completed: {task.completedAt?.isValid() ? task.completedAt.format("MMM D, YYYY") : "Not completed"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {roadmapGroups.length === 0 ? (
+            <div className="text-sm text-slate-500">No tasks for selected project.</div>
+          ) : null}
+        </div>
+        ) : null}
+        {false ? (
+          <div className="mt-4 hidden sm:grid sm:grid-cols-[180px_1fr] sm:items-end sm:gap-3">
+            <div />
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-500">
+              {ganttRange.ticks.map((tick, index) => (
+                <span key={`${tick.valueOf()}-${index}`}>{tick.format("MMM D")}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {false ? (
         <div className="mt-4 space-y-3">
           {ganttTasks.map((task) => {
             if (!ganttRange) return null;
             const offset = Math.max(task.start.diff(ganttRange.minStart, "day"), 0);
             const duration = Math.max(task.end.diff(task.start, "day"), 1);
             const left = (offset / ganttRange.totalDays) * 100;
-            const width = (duration / ganttRange.totalDays) * 100;
+            const width = Math.max((duration / ganttRange.totalDays) * 100, 3);
+            const completedOffset = task.completedAt
+              ? Math.max(task.completedAt.diff(ganttRange.minStart, "day"), 0)
+              : null;
+            const completedLeft =
+              completedOffset === null ? null : (completedOffset / ganttRange.totalDays) * 100;
             return (
               <div key={task._id} className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center sm:gap-3">
-                <div className="text-xs text-slate-300">{task.title}</div>
-                <div className="relative h-3 rounded-full bg-slate-800">
+                <div>
+                  <div className="text-xs text-slate-300">{task.title}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {`${task.start.format("MMM D")} - ${task.end.format("MMM D")}`}
+                    {task.status === "done" && task.completedAt ? ` · Completed ${task.completedAt.format("MMM D")}` : ""}
+                  </div>
+                </div>
+                <div className="relative h-3 rounded-full bg-slate-800/80">
                   <div
-                    className="absolute h-3 rounded-full bg-brand-500"
+                    className={`absolute h-3 rounded-full ${task.status === "done" ? "bg-emerald-500" : "bg-brand-500"}`}
                     style={{ left: `${left}%`, width: `${width}%` }}
                   />
+                  {task.status === "done" && completedLeft !== null ? (
+                    <div
+                      className="absolute top-1/2 h-5 w-0.5 -translate-y-1/2 bg-emerald-100"
+                      style={{ left: `${completedLeft}%` }}
+                    />
+                  ) : null}
                 </div>
               </div>
             );
@@ -898,6 +1365,7 @@ const ManagerDashboard = () => {
             <div className="text-sm text-slate-500">No tasks for selected project.</div>
           )}
         </div>
+        ) : null}
       </div>
 
       <div id="capacity" className="scroll-mt-6">
@@ -962,6 +1430,26 @@ const ManagerDashboard = () => {
           />
           <button className="btn-primary" type="submit">Assign Task</button>
         </form>
+      </Modal>
+      <Modal
+        open={Boolean(proofHistoryTask)}
+        title={proofHistoryTask ? `Proof History: ${proofHistoryTask.title}` : "Proof History"}
+        onClose={() => {
+          setProofHistoryTask(null);
+          setProofHistoryLoading(false);
+        }}
+      >
+        {proofHistoryLoading ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
+            Loading proof history...
+          </div>
+        ) : (
+          <TaskProofHistory
+            task={proofHistoryTask}
+            onRecheckLog={(log) => handleRecheckProof(proofHistoryTask?._id, log?.entryId)}
+            recheckingEntryId={recheckingEntryId}
+          />
+        )}
       </Modal>
     </div>
   );

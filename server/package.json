@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "verify-worker": "node src/worker/verificationWorker.js",
     "seed": "node src/seed/seed.js",
     "seed:mails": "node src/seed/seedInboxMails.js",
     "seed:ids": "node src/seed/syncSwmsIds.js"
@@ -25,6 +26,7 @@
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.1",
     "pdfkit": "^0.14.0",
+    "playwright-core": "^1.58.2",
     "socket.io": "^4.7.5",
     "twilio": "^5.3.7",
     "zod": "^3.23.8"

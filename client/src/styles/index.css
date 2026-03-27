@@ -125,9 +125,46 @@ body::-webkit-scrollbar {
   animation: dashboardCardPulse 4.6s ease-in-out infinite;
 }
 
+.dashboard-disclosure-card {
+  padding: clamp(1.15rem, 2vw, 1.6rem);
+}
+
+.dashboard-disclosure-trigger {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+}
+
+.dashboard-disclosure-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.dashboard-disclosure-copy p {
+  max-width: 42rem;
+}
+
 @media (max-width: 640px) {
   .card {
     padding: 1rem;
+  }
+
+  .dashboard-disclosure-card {
+    padding: 1.25rem 1rem;
+  }
+
+  .dashboard-disclosure-copy h3 {
+    font-size: 1.1rem;
+    line-height: 1.35;
+  }
+
+  .dashboard-disclosure-copy p {
+    margin-top: 0.45rem;
+    font-size: 0.98rem;
+    line-height: 1.5;
   }
 }
 
@@ -256,6 +293,35 @@ body::-webkit-scrollbar {
 .sidebar-shell .card:hover {
   transform: translateX(6px);
   box-shadow: none;
+}
+
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  .card,
+  .card::after,
+  .dashboard-shell::before,
+  .dashboard-shell::after,
+  .dashboard-main-pane::before,
+  .dashboard-page > *,
+  .sidebar-shell {
+    animation: none !important;
+  }
+
+  .card {
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .card:hover,
+  .sidebar-shell .card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .card::after {
+    opacity: 0.45;
+  }
 }
 
 .sidebar-shell .grid > * {

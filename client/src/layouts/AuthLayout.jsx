@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider } from "../utils/AuthContext.jsx";
 
@@ -21,23 +21,7 @@ const AuthLayout = () => {
   );
 
   const isAuthPath = (pathname) => pathname === "/register" || pathname.startsWith("/login");
-  const initialAuthPathRef = useRef(isAuthPath(location.pathname));
-  const [initialRedirecting, setInitialRedirecting] = useState(initialAuthPathRef.current);
-  const showAuthPanel = !initialRedirecting && isAuthPath(location.pathname);
-
-  // Prevent the app from "starting" in the auth panel after a refresh/deep-link.
-  // useLayoutEffect runs before paint to avoid a visible flash of the panel.
-  useLayoutEffect(() => {
-    if (!initialAuthPathRef.current) return;
-    navigate("/home", { replace: true });
-  }, [navigate]);
-
-  useEffect(() => {
-    if (!initialRedirecting) return;
-    if (!isAuthPath(location.pathname)) {
-      setInitialRedirecting(false);
-    }
-  }, [initialRedirecting, location.pathname]);
+  const showAuthPanel = isAuthPath(location.pathname);
 
   useEffect(() => {
     localStorage.setItem("swms_theme", theme);
@@ -213,7 +197,7 @@ const AuthLayout = () => {
             if (showAuthPanel) navigate("/home");
           }}
         >
-          {showAuthPanel && (
+            {showAuthPanel && (
             <div ref={mobileAuthRef} className="mb-6 block lg:hidden">
               <section
                 className="landing-auth-panel card max-w-xl overflow-y-auto no-scrollbar border border-slate-800/80 bg-slate-900/50"
