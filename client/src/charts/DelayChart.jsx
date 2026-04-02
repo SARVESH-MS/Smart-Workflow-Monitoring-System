@@ -13,6 +13,12 @@ import { formatDate } from "../utils/date.js";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
+const STATUS_LABELS = {
+  todo: "Todo",
+  in_progress: "In Progress",
+  done: "Done"
+};
+
 const normalizeTask = (task) => {
   if (!task) return null;
   if (typeof task === "string") {
@@ -169,7 +175,11 @@ const DelayChart = ({
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                   {t.projectName ? <span className="rounded-full border border-slate-700 px-2 py-0.5">{t.projectName}</span> : null}
                   {t.deadline ? <span>Deadline: {formatDate(t.deadline)}</span> : null}
-                  {t.status ? <span className="rounded-full border border-slate-700 px-2 py-0.5">Status: {t.status}</span> : null}
+                  {t.status ? (
+                    <span className="rounded-full border border-slate-700 px-2 py-0.5">
+                      Status: {STATUS_LABELS[t.status] || t.status}
+                    </span>
+                  ) : null}
                   {typeof t.isDelayed === "boolean" ? (
                     <span className={`rounded-full border px-2 py-0.5 ${t.isDelayed ? "border-rose-500/40 text-rose-300" : "border-emerald-500/30 text-emerald-200"}`}>
                       {t.isDelayed ? "Delayed" : "On time"}

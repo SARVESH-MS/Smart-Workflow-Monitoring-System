@@ -69,9 +69,13 @@ const ManagerDashboard = () => {
   const [dragHoverStage, setDragHoverStage] = useState("");
   const [touchDragCard, setTouchDragCard] = useState(null);
   const touchDragRef = useRef(null);
+  const projectIdsRef = useRef([]);
   const [proofHistoryTask, setProofHistoryTask] = useState(null);
   const [proofHistoryLoading, setProofHistoryLoading] = useState(false);
   const [recheckingEntryId, setRecheckingEntryId] = useState("");
+  const [recheckFeedback, setRecheckFeedback] = useState({ message: "", tone: "info" });
+  const [statusUpdatingTaskId, setStatusUpdatingTaskId] = useState("");
+  const [openProgressTaskId, setOpenProgressTaskId] = useState("");
   const [form, setForm] = useState({
     projectId: "",
     userId: "",
@@ -149,14 +153,61 @@ const ManagerDashboard = () => {
     return () => clearInterval(timer);
   }, [id]);
   useEffect(() => {
+    projectIdsRef.current = projects.map((project) => String(project._id));
+  }, [projects]);
+
+  useEffect(() => {
     const socket = createSocket();
-    socket.on("task:created", () => {
-      loadOverview();
+    const isRelevantTask = (task) =>
+      projectIdsRef.current.length === 0 || projectIdsRef.current.includes(String(task?.projectId || ""));
+    const isRelevantProject = (project) => String(project?.managerId || "") === String(id);
+    socket.on("task:created", (task) => {
+      if (!isRelevantTask(task)) return;
+      setTasks((prev) =>
+        prev.some((item) => String(item._id) === String(task?._id))
+          ? prev
+          : [task, ...prev]
+      );
     });
-    socket.on("task:updated", () => {
-      loadOverview();
+    socket.on("task:updated", (task) => {
+      setTasks((prev) => {
+        const alreadyExists = prev.some((item) => String(item._id) === String(task?._id));
+        if (!isRelevantTask(task)) {
+          return alreadyExists ? prev.filter((item) => String(item._id) !== String(task?._id)) : prev;
+        }
+        if (!alreadyExists) {
+          return [task, ...prev];
+        }
+        return prev.map((item) => (String(item._id) === String(task?._id) ? { ...item, ...task } : item));
+      });
     });
-    socket.on("project:updated", loadOverview);
+    socket.on("project:created", (project) => {
+      if (!isRelevantProject(project)) return;
+      setProjects((prev) =>
+        prev.some((item) => String(item._id) === String(project?._id))
+          ? prev
+          : [project, ...prev]
+      );
+      setSelectedProjectId((prev) => prev || project?._id || "");
+    });
+    socket.on("project:updated", (project) => {
+      setProjects((prev) => {
+        const exists = prev.some((item) => String(item._id) === String(project?._id));
+        if (!isRelevantProject(project)) {
+          return exists ? prev.filter((item) => String(item._id) !== String(project?._id)) : prev;
+        }
+        if (!exists) {
+          return [project, ...prev];
+        }
+        return prev.map((item) => (String(item._id) === String(project?._id) ? { ...item, ...project } : item));
+      });
+      if (!isRelevantProject(project)) {
+        setTasks((prev) => prev.filter((task) => String(task.projectId) !== String(project?._id)));
+        setSelectedProjectId((prev) => (String(prev) === String(project?._id) ? "" : prev));
+        return;
+      }
+      setSelectedProjectId((prev) => prev || project?._id || "");
+    });
     return () => socket.disconnect();
   }, [id]);
   useEffect(() => {
@@ -190,6 +241,20 @@ const ManagerDashboard = () => {
 
   const [selectedTaskIds, setSelectedTaskIds] = useState([]);
 
+  const normalizeTaskStatus = (status) => String(status || "todo").trim().toLowerCase().replace(/\s+/g, "_");
+
+  const getTaskReviewState = (task) => {
+    const riskLevel = String(task.progressReview?.riskLevel || "").toLowerCase();
+    if (riskLevel === "high" || riskLevel === "warning") return riskLevel;
+
+    const hasReviewFlags = Array.isArray(task.progressReview?.flags) && task.progressReview.flags.length > 0;
+    const verificationStatus = String(task.latestProgressLog?.verification?.status || "").toLowerCase();
+
+    if (verificationStatus === "fail") return "high";
+    if (verificationStatus === "warning" || hasReviewFlags) return "warning";
+    return "none";
+  };
+
   const filteredTasks = tasks.filter((task) => {
     if (taskScope === "mine" && String(task.userId) !== String(id)) return false;
     if (filters.status && task.status !== filters.status) return false;
@@ -197,30 +262,65 @@ const ManagerDashboard = () => {
     return true;
   });
   const selectedTaskCount = selectedTaskIds.length;
-  const activeTaskCount = filteredTasks.filter((task) => task.status === "in_progress").length;
-  const reviewTaskCount = filteredTasks.filter((task) => task.progressReview?.riskLevel === "high").length;
+  const activeTaskCount = filteredTasks.filter((task) => normalizeTaskStatus(task.status) === "in_progress").length;
+  const reviewTaskCount = filteredTasks.filter((task) => getTaskReviewState(task) !== "none").length;
   const dueSoonTaskCount = filteredTasks.filter((task) => {
-    const deadline = dayjs(task.deadline);
-    if (!deadline.isValid() || task.status === "done") return false;
+    const deadline = dayjs(getEffectiveDeadlineInput(task) || task.deadline);
+    if (!deadline.isValid() || normalizeTaskStatus(task.status) === "done") return false;
     const daysLeft = deadline.startOf("day").diff(dayjs().startOf("day"), "day");
-    return daysLeft >= 0 && daysLeft <= 3;
+    return daysLeft >= 0 && daysLeft <= 7;
   }).length;
 
   const mergeTaskUpdate = (updatedTask) => {
     setTasks((prev) => prev.map((task) => (task._id === updatedTask._id ? { ...task, ...updatedTask } : task)));
   };
 
+  const mergeTaskUpdates = (updatedTasks = []) => {
+    if (!Array.isArray(updatedTasks) || updatedTasks.length === 0) return;
+    const updatesById = new Map(updatedTasks.filter(Boolean).map((task) => [String(task._id), task]));
+    setTasks((prev) =>
+      prev.map((task) => {
+        const next = updatesById.get(String(task._id));
+        return next ? { ...task, ...next } : task;
+      })
+    );
+  };
+
   const handleRecheckProof = async (taskId, entryId) => {
     if (!taskId || !entryId) return;
     setRecheckingEntryId(entryId);
+    setRecheckFeedback({ message: "", tone: "info" });
     try {
       const updatedTask = await recheckTaskProof(taskId, entryId);
       mergeTaskUpdate(updatedTask);
       setProofHistoryTask((current) =>
         current && String(current._id) === String(updatedTask._id) ? updatedTask : current
       );
+      setRecheckFeedback({
+        message: "Proof rechecked successfully. The latest verification result has been refreshed.",
+        tone: "success"
+      });
+    } catch (error) {
+      setRecheckFeedback({
+        message: error.response?.data?.message || "Proof recheck failed. Please try again.",
+        tone: "error"
+      });
     } finally {
       setRecheckingEntryId("");
+    }
+  };
+
+  const handleManagerStatusChange = async (taskId, nextStatus) => {
+    if (!taskId || !nextStatus) return;
+    setStatusUpdatingTaskId(taskId);
+    try {
+      const updatedTask = await updateTask(taskId, { status: nextStatus });
+      mergeTaskUpdate(updatedTask);
+      setProofHistoryTask((current) =>
+        current && String(current._id) === String(updatedTask._id) ? updatedTask : current
+      );
+    } finally {
+      setStatusUpdatingTaskId("");
     }
   };
 
@@ -231,15 +331,22 @@ const ManagerDashboard = () => {
     return String(value);
   };
 
-  const getEffectiveDeadlineInput = (task) => {
+  function getEffectiveDeadlineInput(task) {
     const originalDeadline = task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "";
     const editedDeadline = deadlineEdits[task._id];
     return editedDeadline && dayjs(editedDeadline).isValid() ? editedDeadline : originalDeadline;
-  };
+  }
 
   const formatTaskStatusLabel = (status) =>
     String(status || "todo")
       .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+  const formatRoleLabel = (role) =>
+    String(role || "")
+      .split(/[\s_-]+/)
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
@@ -264,6 +371,8 @@ const ManagerDashboard = () => {
       task.status === "in_progress" && (!lastProgressAt || !lastProgressAt.isSame(dayjs(), "day"));
     const proofCount = Number(task.proofSubmissionCount || 0);
     const statusToneClass = getTaskStatusToneClass(task.status);
+    const isStatusUpdating = statusUpdatingTaskId === task._id;
+    const isProgressOpen = openProgressTaskId === task._id;
     return {
       ...task,
       select: (
@@ -278,7 +387,11 @@ const ManagerDashboard = () => {
         />
       ),
       title: (
-        <div className="min-w-[13rem] max-w-[20rem]">
+        <button
+          type="button"
+          className="min-w-[13rem] max-w-[20rem] text-left"
+          onClick={() => setOpenProgressTaskId((current) => (current === task._id ? "" : task._id))}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-base font-semibold text-slate-100">{task.title}</div>
             <span className="rounded-full border border-slate-700/80 bg-slate-900/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
@@ -301,51 +414,88 @@ const ManagerDashboard = () => {
               </span>
             ) : null}
           </div>
-        </div>
+          <div className="mt-2 text-[11px] font-medium text-brand-300">
+            {isProgressOpen ? "Hide latest progress" : "Open latest progress"}
+          </div>
+        </button>
       ),
       assignee: (
-        <div className="min-w-[8rem] rounded-xl border border-slate-800/80 bg-slate-950/40 px-3 py-2">
-          <div className="font-medium text-slate-100">{user?.name || "-"}</div>
-          <div className="mt-0.5 text-xs text-slate-400">{user?.teamRole || task.roleContribution || "No role set"}</div>
+        <div className="min-w-[8rem] max-w-[11rem] rounded-xl border border-slate-800/80 bg-slate-950/40 px-3 py-2">
+          <div className="truncate whitespace-nowrap font-medium text-slate-100" title={user?.name || "-"}>
+            {user?.name || "-"}
+          </div>
+          <div
+            className="mt-0.5 truncate whitespace-nowrap text-xs text-slate-400"
+            title={formatRoleLabel(user?.teamRole || task.roleContribution) || "No role set"}
+          >
+            {formatRoleLabel(user?.teamRole || task.roleContribution) || "No role set"}
+          </div>
         </div>
       ),
       progress: (
         <div className="min-w-[13rem] rounded-xl border border-slate-800/80 bg-slate-950/40 p-2">
-          <TaskProgressSummary latestProgressLog={task.latestProgressLog} compact />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              className="btn-ghost px-2 py-1 text-[11px]"
-              type="button"
-              onClick={async () => {
-                setProofHistoryLoading(true);
-                setProofHistoryTask({ _id: task._id, title: task.title, progressLogs: [] });
-                try {
-                  const fullTask = await getTask(task._id);
-                  setProofHistoryTask(fullTask);
-                } finally {
-                  setProofHistoryLoading(false);
-                }
-              }}
-            >
-              View proof history ({proofCount})
-            </button>
-            {task.latestProgressLog?.entryId ? (
+          {isProgressOpen ? (
+            <>
+              <TaskProgressSummary latestProgressLog={task.latestProgressLog} compact />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  className="btn-ghost px-2 py-1 text-[11px]"
+                  type="button"
+                  onClick={async () => {
+                    setProofHistoryLoading(true);
+                    setProofHistoryTask({ _id: task._id, title: task.title, progressLogs: [] });
+                    try {
+                      const fullTask = await getTask(task._id);
+                      setProofHistoryTask(fullTask);
+                    } finally {
+                      setProofHistoryLoading(false);
+                    }
+                  }}
+                >
+                  View proof history ({proofCount})
+                </button>
+                {task.latestProgressLog?.entryId ? (
+                  <button
+                    className="btn-ghost px-2 py-1 text-[11px]"
+                    type="button"
+                    disabled={recheckingEntryId === task.latestProgressLog.entryId}
+                    onClick={() => handleRecheckProof(task._id, task.latestProgressLog.entryId)}
+                  >
+                    {recheckingEntryId === task.latestProgressLog.entryId ? "Rechecking..." : "Recheck proof"}
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-2">
+                <DailyProgressStatusBadge status={task.dailyProgressStatus} showMessage={false} />
+              </div>
+              <div className="mt-2">
+                <TaskProgressReview review={task.progressReview} compact />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-slate-400">
+                {task.latestProgressLog?.loggedAt
+                  ? `Last update ${dayjs(task.latestProgressLog.loggedAt).format("MMM D, YYYY h:mm A")}`
+                  : "No progress update yet"}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <DailyProgressStatusBadge status={task.dailyProgressStatus} showMessage={false} />
+                {task.progressReview?.riskLevel ? (
+                  <span className="text-[11px] text-slate-500">
+                    {task.progressReview.riskLevel === "high" ? "Needs review" : "Reviewed"}
+                  </span>
+                ) : null}
+              </div>
               <button
-                className="btn-ghost px-2 py-1 text-[11px]"
+                className="mt-3 text-[11px] font-medium text-brand-300"
                 type="button"
-                disabled={recheckingEntryId === task.latestProgressLog.entryId}
-                onClick={() => handleRecheckProof(task._id, task.latestProgressLog.entryId)}
+                onClick={() => setOpenProgressTaskId(task._id)}
               >
-                {recheckingEntryId === task.latestProgressLog.entryId ? "Rechecking..." : "Recheck proof"}
+                Click this task to open details
               </button>
-            ) : null}
-          </div>
-          <div className="mt-2">
-            <DailyProgressStatusBadge status={task.dailyProgressStatus} showMessage={false} />
-          </div>
-          <div className="mt-2">
-            <TaskProgressReview review={task.progressReview} compact />
-          </div>
+            </>
+          )}
         </div>
       ),
       timeSpent: (
@@ -358,9 +508,24 @@ const ManagerDashboard = () => {
       ),
       status: (
         <div className="min-w-[8rem] rounded-xl border border-slate-800/80 bg-slate-950/40 px-3 py-2">
-          <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${statusToneClass}`}>
-            {formatTaskStatusLabel(task.status)}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${statusToneClass}`}>
+              {formatTaskStatusLabel(task.status)}
+            </div>
+            {isStatusUpdating ? (
+              <span className="text-[11px] text-slate-500">Saving...</span>
+            ) : null}
           </div>
+          <select
+            className="mt-2 w-full rounded-lg bg-slate-900 px-2 py-1.5 text-xs text-slate-200"
+            value={task.status || "todo"}
+            disabled={isStatusUpdating}
+            onChange={(e) => handleManagerStatusChange(task._id, e.target.value)}
+          >
+            <option value="todo">Todo</option>
+            <option value="in_progress">In Progress</option>
+            <option value="done">Done</option>
+          </select>
           {isMissingTodayProgress ? (
             <div className="mt-1 text-[11px] text-amber-300">No progress today.</div>
           ) : null}
@@ -442,9 +607,9 @@ const ManagerDashboard = () => {
       resetKanbanDrag();
       return;
     }
-    await updateTask(taskId, { stage });
+    const updatedTask = await updateTask(taskId, { stage });
+    mergeTaskUpdate(updatedTask);
     resetKanbanDrag();
-    loadOverview();
   };
 
   useEffect(() => {
@@ -540,10 +705,10 @@ const ManagerDashboard = () => {
 
   const handleAssign = async (e) => {
     e.preventDefault();
-    await createTask(form);
+    const createdTask = await createTask(form);
+    setTasks((prev) => [createdTask, ...prev]);
     setOpen(false);
     setForm({ projectId: "", userId: "", title: "", description: "", roleContribution: "", deadline: "" });
-    loadOverview();
   };
 
   const triggerDownload = (blob, filename) => {
@@ -681,6 +846,25 @@ const ManagerDashboard = () => {
         </div>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Visible Tasks</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">{filteredTasks.length}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">In Progress</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">{activeTaskCount}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Needs Review</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">{reviewTaskCount}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Due Soon</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-100">{dueSoonTaskCount}</div>
+        </div>
+      </div>
+
       <div id="tasks" className="card dashboard-disclosure-card scroll-mt-6">
         <button
           className="dashboard-disclosure-trigger"
@@ -694,24 +878,17 @@ const ManagerDashboard = () => {
         </button>
         {tasksOpen && (
           <>
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Visible Tasks</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-100">{filteredTasks.length}</div>
+        {recheckFeedback.message ? (
+          <div
+            className={`mt-5 rounded-xl border px-4 py-3 text-sm ${
+              recheckFeedback.tone === "error"
+                ? "border-rose-300 bg-rose-100 text-rose-950"
+                : "border-emerald-300 bg-emerald-100 text-emerald-950"
+            }`}
+          >
+            {recheckFeedback.message}
           </div>
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">In Progress</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-100">{activeTaskCount}</div>
-          </div>
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Needs Review</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-100">{reviewTaskCount}</div>
-          </div>
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Due Soon</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-100">{dueSoonTaskCount}</div>
-          </div>
-        </div>
+        ) : null}
         <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
           <div className="rounded-[1.5rem] border border-slate-800/80 bg-slate-950/45 p-4">
             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">View & Filters</div>
@@ -783,9 +960,9 @@ const ManagerDashboard = () => {
                 className="btn-ghost"
                 onClick={async () => {
                   if (selectedTaskIds.length === 0) return;
-                  await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "in_progress" } });
+                  const result = await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "in_progress" } });
+                  mergeTaskUpdates(result?.tasks);
                   setSelectedTaskIds([]);
-                  loadOverview();
                 }}
               >
                 Bulk In Progress
@@ -794,9 +971,9 @@ const ManagerDashboard = () => {
                 className="btn-ghost"
                 onClick={async () => {
                   if (selectedTaskIds.length === 0) return;
-                  await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "done" } });
+                  const result = await bulkUpdateTasks({ taskIds: selectedTaskIds, update: { status: "done" } });
+                  mergeTaskUpdates(result?.tasks);
                   setSelectedTaskIds([]);
-                  loadOverview();
                 }}
               >
                 Bulk Done

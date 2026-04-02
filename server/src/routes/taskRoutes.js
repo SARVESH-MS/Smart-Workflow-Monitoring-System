@@ -20,6 +20,7 @@ import asyncHandler from "../utils/asyncHandler.js";
 
 const router = express.Router();
 const evidenceUploadDir = path.resolve("uploads", "task-evidence");
+const MAX_TASK_EVIDENCE_FILE_SIZE = 1000 * 1024 * 1024;
 fs.mkdirSync(evidenceUploadDir, { recursive: true });
 
 const allowedEvidenceExtensions = new Set([
@@ -68,7 +69,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: MAX_TASK_EVIDENCE_FILE_SIZE },
   fileFilter: (req, file, cb) => {
     const extension = path.extname(file.originalname || "").toLowerCase();
     if (!allowedEvidenceExtensions.has(extension)) {

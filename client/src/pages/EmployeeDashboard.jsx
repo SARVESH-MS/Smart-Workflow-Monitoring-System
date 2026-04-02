@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { listTasks, startTask, stopTask, completeTask, addTaskProgress, uploadTaskEvidence } from "../api/tasks.js";
+import { listTasks, getTask, startTask, stopTask, completeTask, addTaskProgress, uploadTaskEvidence } from "../api/tasks.js";
 import TimerControls from "../components/TimerControls.jsx";
 import StatCard from "../components/StatCard.jsx";
 import { formatDate, formatDurationHours } from "../utils/date.js";
@@ -40,6 +40,7 @@ const PROGRESS_STATE_OPTIONS = [
 
 const EVIDENCE_TYPE_OPTIONS = [
   { value: "none", label: "No Link" },
+  { value: "archive", label: "Project Archive (.zip)" },
   { value: "commit", label: "Commit" },
   { value: "screenshot", label: "Screenshot" },
   { value: "preview", label: "Preview URL" },
@@ -49,6 +50,8 @@ const EVIDENCE_TYPE_OPTIONS = [
   { value: "issue", label: "Issue/Bug" },
   { value: "other", label: "Other" }
 ];
+
+const MAX_TASK_EVIDENCE_FILE_SIZE = 1000 * 1024 * 1024;
 
 const CompletionChart = lazy(() => import("../charts/CompletionChart.jsx"));
 const DelayChart = lazy(() => import("../charts/DelayChart.jsx"));
@@ -64,6 +67,35 @@ const emptyProgressDraft = () => ({
   evidenceFile: null
 });
 
+const inferEvidenceTypeFromFile = (file, currentType) => {
+  if (!file) return currentType;
+  if (currentType && currentType !== "none") return currentType;
+
+  const fileName = String(file.name || "").toLowerCase();
+  const mimeType = String(file.type || "").toLowerCase();
+
+  if (/\.(zip|rar|7z)$/i.test(fileName)) return "archive";
+  if (mimeType.startsWith("image/")) return "screenshot";
+  if (/\.(pdf|doc|docx|txt|rtf|ppt|pptx|xls|xlsx|csv|json|md)$/i.test(fileName)) return "document";
+  return "other";
+};
+
+const formatApiError = (error, fallbackMessage) => {
+  const issues = Array.isArray(error?.response?.data?.issues) ? error.response.data.issues : [];
+  if (issues.length > 0) {
+    const firstIssue = issues[0];
+    const fieldLabel = String(firstIssue?.path?.[0] || "")
+      .replace(/([A-Z])/g, " $1")
+      .replace(/_/g, " ")
+      .trim();
+    if (fieldLabel && firstIssue?.message) {
+      return `${fieldLabel.charAt(0).toUpperCase() + fieldLabel.slice(1)}: ${firstIssue.message}`;
+    }
+    if (firstIssue?.message) return firstIssue.message;
+  }
+  return error?.response?.data?.message || fallbackMessage;
+};
+
 const EmployeeDashboard = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -77,9 +109,10 @@ const EmployeeDashboard = () => {
   const [forumSender, setForumSender] = useState("");
   const [progressDrafts, setProgressDrafts] = useState({});
   const [submittingProgressTaskId, setSubmittingProgressTaskId] = useState("");
-  const [taskFeedback, setTaskFeedback] = useState("");
+  const [taskFeedback, setTaskFeedback] = useState({ message: "", tone: "info", taskId: "" });
   const [activeElapsedSec, setActiveElapsedSec] = useState(0);
   const [proofHistoryTask, setProofHistoryTask] = useState(null);
+  const [loadingTaskDetailsId, setLoadingTaskDetailsId] = useState("");
   const [tasksOpen, setTasksOpen] = useState(false);
 
   const getProgressDraft = (taskId) => ({
@@ -98,8 +131,21 @@ const EmployeeDashboard = () => {
     }));
   };
 
+  const showTaskFeedback = (message, tone = "info", taskId = "") => {
+    setTaskFeedback({ message, tone, taskId });
+  };
+
+  const mergeTaskUpdate = (updatedTask) => {
+    if (!updatedTask?._id) return;
+    setTasks((prev) =>
+      prev.map((task) =>
+        task._id === updatedTask._id ? { ...task, ...updatedTask, _expanded: task._expanded } : task
+      )
+    );
+  };
+
   const load = async () => {
-    const data = await listTasks({ userId: id });
+    const data = await listTasks({ userId: id, compact: 1 });
     setTasks(data);
   };
 
@@ -127,8 +173,28 @@ const EmployeeDashboard = () => {
 
   useEffect(() => {
     const socket = createSocket();
-    socket.on("task:updated", () => {
-      load();
+    const isRelevantTask = (task) => String(task?.userId || "") === String(id);
+    socket.on("task:created", (task) => {
+      if (!isRelevantTask(task)) return;
+      setTasks((prev) =>
+        prev.some((item) => String(item._id) === String(task?._id))
+          ? prev
+          : [{ ...task, _expanded: false }, ...prev]
+      );
+    });
+    socket.on("task:updated", (task) => {
+      setTasks((prev) => {
+        const alreadyExists = prev.some((item) => String(item._id) === String(task?._id));
+        if (!isRelevantTask(task)) {
+          return alreadyExists ? prev.filter((item) => String(item._id) !== String(task?._id)) : prev;
+        }
+        if (!alreadyExists) {
+          return [{ ...task, _expanded: false }, ...prev];
+        }
+        return prev.map((item) =>
+          String(item._id) === String(task?._id) ? { ...item, ...task } : item
+        );
+      });
     });
     return () => socket.disconnect();
   }, [id]);
@@ -149,6 +215,25 @@ const EmployeeDashboard = () => {
   }, []);
 
   const active = tasks.find((task) => task.status === "in_progress");
+
+  const ensureTaskDetailsLoaded = async (taskId) => {
+    const currentTask = tasks.find((task) => task._id === taskId);
+    if (!currentTask?._id) return null;
+    if (Array.isArray(currentTask.progressLogs)) return currentTask;
+    setLoadingTaskDetailsId(taskId);
+    try {
+      const fullTask = await getTask(taskId);
+      mergeTaskUpdate(fullTask);
+      return fullTask;
+    } finally {
+      setLoadingTaskDetailsId("");
+    }
+  };
+
+  useEffect(() => {
+    if (!active?._id || Array.isArray(active.progressLogs) || loadingTaskDetailsId === active._id) return;
+    ensureTaskDetailsLoaded(active._id);
+  }, [active?._id, active?.progressLogs, loadingTaskDetailsId]);
 
   useEffect(() => {
     if (!active || !active.startTime) {
@@ -177,42 +262,76 @@ const EmployeeDashboard = () => {
   });
 
   const changeStatus = async (task, nextStatus) => {
-    setTaskFeedback("");
+    showTaskFeedback("", "info", "");
     try {
+      let updatedTask = null;
       if (nextStatus === "in_progress") {
-        await startTask(task._id);
+        updatedTask = await startTask(task._id);
       } else if (nextStatus === "todo") {
-        await stopTask(task._id);
+        updatedTask = await stopTask(task._id);
       } else if (nextStatus === "done") {
-        await completeTask(task._id);
+        updatedTask = await completeTask(task._id);
       }
-      await load();
+      if (updatedTask?._id) {
+        mergeTaskUpdate(updatedTask);
+      } else {
+        load();
+      }
     } catch (error) {
-      setTaskFeedback(error.response?.data?.message || "Task update failed.");
+      showTaskFeedback(error.response?.data?.message || "Task update failed.", "error", task._id);
     }
   };
 
   const saveProgress = async (taskId) => {
     const draft = getProgressDraft(taskId);
-    if (!draft.affectedArea.trim()) {
-      setTaskFeedback("Add the page, module, screen, or area you worked on today.");
+    const affectedArea = String(draft.affectedArea || "").trim();
+    const note = String(draft.note || "").trim();
+    const evidenceUrl = String(draft.evidenceUrl || "").trim();
+
+    if (!affectedArea) {
+      showTaskFeedback("Add the page, module, screen, or area you worked on today.", "error", taskId);
       return;
     }
-    if (!draft.note.trim()) {
-      setTaskFeedback("Write today's progress before saving.");
+    if (affectedArea.length < 3) {
+      showTaskFeedback("Affected area must be at least 3 characters.", "error", taskId);
       return;
     }
-    if (draft.evidenceType !== "none" && !String(draft.evidenceUrl || "").trim() && !draft.evidenceFile && !draft.evidenceAttachment?.url) {
-      setTaskFeedback("Add an evidence link or upload a file for the selected evidence type.");
+    if (affectedArea.length > 160) {
+      showTaskFeedback("Affected area must stay within 160 characters.", "error", taskId);
+      return;
+    }
+    if (!note) {
+      showTaskFeedback("Write today's progress before saving.", "error", taskId);
+      return;
+    }
+    if (note.length < 10) {
+      showTaskFeedback("Progress note must be at least 10 characters.", "error", taskId);
+      return;
+    }
+    if (note.length > 1200) {
+      showTaskFeedback("Progress note must stay within 1200 characters.", "error", taskId);
+      return;
+    }
+    if (evidenceUrl.length > 500) {
+      showTaskFeedback("Evidence link must stay within 500 characters.", "error", taskId);
+      return;
+    }
+    if (draft.evidenceType !== "none" && !evidenceUrl && !draft.evidenceFile && !draft.evidenceAttachment?.url) {
+      showTaskFeedback("Add an evidence link or upload a file for the selected evidence type.", "error", taskId);
       return;
     }
     setSubmittingProgressTaskId(taskId);
-    setTaskFeedback("");
+    showTaskFeedback("", "info", "");
     try {
       let evidenceAttachment = draft.evidenceAttachment || null;
       let evidenceUrl = String(draft.evidenceUrl || "").trim();
 
       if (draft.evidenceFile) {
+        if (draft.evidenceFile.size > MAX_TASK_EVIDENCE_FILE_SIZE) {
+          showTaskFeedback("Selected file is too large. Upload a proof file up to 1000MB.", "error", taskId);
+          setSubmittingProgressTaskId("");
+          return;
+        }
         evidenceAttachment = await uploadTaskEvidence(draft.evidenceFile);
         if (!evidenceUrl) {
           evidenceUrl = evidenceAttachment.url;
@@ -228,20 +347,28 @@ const EmployeeDashboard = () => {
         evidenceUrl,
         evidenceAttachment
       });
+      mergeTaskUpdate(updatedTask);
       setProgressDrafts((prev) => ({
         ...prev,
         [taskId]: emptyProgressDraft()
       }));
       if (updatedTask?.progressReview?.riskLevel === "high") {
-        setTaskFeedback("Today's progress was saved, but the submission review found strong issues. Add clearer evidence or make sure the proof matches the assigned task.");
+        showTaskFeedback(
+          "Today's progress was saved, but the submission review found strong issues. Add clearer evidence or make sure the proof matches the assigned task.",
+          "warning",
+          taskId
+        );
       } else if (updatedTask?.progressReview?.riskLevel === "warning") {
-        setTaskFeedback("Today's progress was saved. Submission review suggests the latest proof may need clearer changes or better task alignment.");
+        showTaskFeedback(
+          "Today's progress was saved. Submission review suggests the latest proof may need clearer changes or better task alignment.",
+          "warning",
+          taskId
+        );
       } else {
-        setTaskFeedback("Today's progress has been saved.");
+        showTaskFeedback("Today's progress has been saved.", "success", taskId);
       }
-      await load();
     } catch (error) {
-      setTaskFeedback(error.response?.data?.message || "Saving progress failed.");
+      showTaskFeedback(formatApiError(error, "Saving progress failed."), "error", taskId);
     } finally {
       setSubmittingProgressTaskId("");
     }
@@ -249,6 +376,13 @@ const EmployeeDashboard = () => {
 
   const renderProgressForm = (task) => {
     const draft = getProgressDraft(task._id);
+    const feedbackForTask = taskFeedback.message && taskFeedback.taskId === task._id ? taskFeedback : null;
+    const feedbackToneClass =
+      feedbackForTask?.tone === "error"
+        ? "border-rose-300 bg-rose-100 text-rose-950"
+        : feedbackForTask?.tone === "warning"
+          ? "border-amber-300 bg-amber-100 text-amber-950"
+          : "border-emerald-300 bg-emerald-100 text-emerald-950";
     return (
       <div className="grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -330,12 +464,12 @@ const EmployeeDashboard = () => {
             accept=".pdf,.doc,.docx,.txt,.rtf,.ppt,.pptx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.zip,.rar,.7z,.json,.md"
             onChange={(e) => {
               const file = e.target.files?.[0] || null;
-              const nextEvidenceType =
-                file && draft.evidenceType === "none"
-                  ? file.type.startsWith("image/")
-                    ? "screenshot"
-                    : "document"
-                  : draft.evidenceType;
+              if (file && file.size > MAX_TASK_EVIDENCE_FILE_SIZE) {
+                showTaskFeedback("Selected file is too large. Upload a proof file up to 1000MB.", "error", task._id);
+                e.target.value = "";
+                return;
+              }
+              const nextEvidenceType = inferEvidenceTypeFromFile(file, draft.evidenceType);
               updateProgressDraft(task._id, {
                 evidenceFile: file,
                 evidenceAttachment: null,
@@ -344,7 +478,7 @@ const EmployeeDashboard = () => {
             }}
           />
           <div className="text-xs text-slate-500">
-            Upload PDF, Word, screenshots, text, spreadsheet, or archive/project files up to 25MB.
+            Upload PDF, Word, screenshots, text, spreadsheet, or project archive files up to 1000MB. ZIP archives trigger the deepest automated project check.
           </div>
           {draft.evidenceFile ? (
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -373,20 +507,55 @@ const EmployeeDashboard = () => {
             Save a same-day update before stopping or completing the task.
           </div>
         </div>
+        {feedbackForTask ? (
+          <div className={`rounded-xl border px-4 py-3 text-sm ${feedbackToneClass}`}>
+            {feedbackForTask.message}
+          </div>
+        ) : null}
       </div>
     );
   };
 
   const renderProofHistoryButton = (task, extraClassName = "") => {
-    const proofCount = (task?.progressLogs || []).filter(hasEvidenceReference).length;
+    const proofCount = Number(task?.proofSubmissionCount || 0);
     return (
       <button
         className={`btn-ghost px-2 py-1 text-xs ${extraClassName}`.trim()}
         type="button"
-        onClick={() => setProofHistoryTask(task)}
+        onClick={async () => {
+          setProofHistoryTask({ _id: task._id, title: task.title, progressLogs: task.progressLogs || [] });
+          if (Array.isArray(task.progressLogs)) return;
+          setLoadingTaskDetailsId(task._id);
+          try {
+            const fullTask = await getTask(task._id);
+            mergeTaskUpdate(fullTask);
+            setProofHistoryTask(fullTask);
+          } finally {
+            setLoadingTaskDetailsId("");
+          }
+        }}
       >
         View proof history ({proofCount})
       </button>
+    );
+  };
+
+  const toggleTaskExpanded = async (taskId) => {
+    const currentTask = tasks.find((task) => task._id === taskId);
+    if (!currentTask?._id) return;
+
+    if (currentTask._expanded) {
+      setTasks((prev) => prev.map((item) => (item._id === taskId ? { ...item, _expanded: false } : item)));
+      return;
+    }
+
+    const fullTask = (await ensureTaskDetailsLoaded(taskId)) || currentTask;
+    setTasks((prev) =>
+      prev.map((item) =>
+        item._id === taskId
+          ? { ...item, ...(fullTask?._id === taskId ? fullTask : {}), _expanded: true }
+          : item
+      )
     );
   };
 
@@ -403,72 +572,74 @@ const EmployeeDashboard = () => {
   };
 
   const renderTaskDetails = (task, compact = false) => (
-    <>
+    <div className="pl-4 sm:pl-5">
       <div className="text-xs uppercase text-slate-500">Task Details</div>
       <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
         {task.description || "No details provided."}
       </div>
       <div className={`mt-5 grid gap-4 ${compact ? "" : "lg:grid-cols-[1.15fr_0.85fr]"}`.trim()}>
-        <div>
+        <div className="min-w-0">
           <div className="text-xs uppercase text-slate-500">Add Today's Progress</div>
           <div className="mt-2">{renderProgressForm(task)}</div>
           <div className="mt-4">
             <TaskProgressReview review={task.progressReview} />
           </div>
         </div>
-        <div>
+        <div className="flex min-h-0 min-w-0 flex-col">
           <div className="text-xs uppercase text-slate-500">Progress Timeline</div>
-          <div className="mt-2 grid gap-2">
-            {(task.progressLogs || []).length === 0 && (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-500">
-                No progress updates yet.
-              </div>
-            )}
-            {[...(task.progressLogs || [])].reverse().map((log, index) => {
-              const evidenceReference = getEvidenceReference(log);
-              const evidenceHref = resolveEvidenceUrl(evidenceReference);
-              const evidenceLabel = log?.evidenceAttachment?.filename || evidenceReference;
-              const verificationTone =
-                log?.verification?.status === "pass"
-                  ? "border-emerald-700/60 bg-emerald-950/70 text-emerald-100"
-                  : log?.verification?.status === "fail"
-                    ? "border-rose-700/60 bg-rose-950/70 text-rose-100"
-                    : "border-amber-700/60 bg-amber-950/60 text-amber-100";
-              return (
-              <div key={`${task._id}-progress-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
-                <div className="text-xs text-slate-500">{new Date(log.loggedAt).toLocaleString()}</div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.workType}</span>
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.progressState}</span>
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.evidenceType}</span>
-                  {log?.verification?.status ? (
-                    <span className={`rounded-full border px-2 py-0.5 text-[11px] ${verificationTone}`}>
-                      {log.verification.status}
-                    </span>
-                  ) : null}
+          <div className="mt-2 flex min-h-[20rem] flex-1 flex-col rounded-2xl border border-slate-800 bg-slate-900/20 p-2">
+            <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto pr-1 thin-scrollbar">
+              {(task.progressLogs || []).length === 0 && (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-500">
+                  No progress updates yet.
                 </div>
-                <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">Area: {log.affectedArea}</div>
-                <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">{log.note}</div>
-                {evidenceReference ? (
-                  <a
-                    className="mt-2 inline-block break-all text-xs text-blue-400 hover:text-blue-300 hover:underline"
-                    href={evidenceHref}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {evidenceLabel}
-                  </a>
-                ) : null}
-                {log?.verification?.summary ? (
-                  <div className="mt-2 text-xs text-slate-400">{log.verification.summary}</div>
-                ) : null}
-              </div>
-              );
-            })}
+              )}
+              {[...(task.progressLogs || [])].reverse().map((log, index) => {
+                const evidenceReference = getEvidenceReference(log);
+                const evidenceHref = resolveEvidenceUrl(evidenceReference);
+                const evidenceLabel = log?.evidenceAttachment?.filename || evidenceReference;
+                const verificationTone =
+                  log?.verification?.status === "pass"
+                    ? "border-emerald-700/60 bg-emerald-950/70 text-emerald-100"
+                    : log?.verification?.status === "fail"
+                      ? "border-rose-700/60 bg-rose-950/70 text-rose-100"
+                      : "border-amber-700/60 bg-amber-950/60 text-amber-100";
+                return (
+                  <div key={`${task._id}-progress-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                    <div className="text-xs text-slate-500">{new Date(log.loggedAt).toLocaleString()}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.workType}</span>
+                      <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.progressState}</span>
+                      <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">{log.evidenceType}</span>
+                      {log?.verification?.status ? (
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] ${verificationTone}`}>
+                          {log.verification.status}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">Area: {log.affectedArea}</div>
+                    <div className="mt-2 whitespace-pre-wrap text-sm text-slate-200">{log.note}</div>
+                    {evidenceReference ? (
+                      <a
+                        className="mt-2 inline-block break-all text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                        href={evidenceHref}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {evidenceLabel}
+                      </a>
+                    ) : null}
+                    {log?.verification?.summary ? (
+                      <div className="mt-2 text-xs text-slate-400">{log.verification.summary}</div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 
   return (
@@ -527,9 +698,9 @@ const EmployeeDashboard = () => {
         <StatCard label="Time Spent" value={formatDurationHours(totalTimeSpent)} />
       </div>
 
-      {taskFeedback && (
+      {taskFeedback.message && !taskFeedback.taskId && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
-          {taskFeedback}
+          {taskFeedback.message}
         </div>
       )}
 
@@ -572,7 +743,7 @@ const EmployeeDashboard = () => {
             <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
               <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Proof Submissions</div>
               <div className="mt-1 text-base font-semibold text-slate-100">
-                {(active.progressLogs || []).filter(hasEvidenceReference).length}
+                {Number(active.proofSubmissionCount || 0)}
               </div>
             </div>
             <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
@@ -646,11 +817,7 @@ const EmployeeDashboard = () => {
                   <div key={task._id} className="rounded-[1.5rem] border border-slate-200/10 bg-slate-950/35 p-4 shadow-sm">
                     <button
                       className="flex w-full items-start justify-between gap-3 text-left"
-                      onClick={() =>
-                        setTasks((prev) =>
-                          prev.map((item) => (item._id === task._id ? { ...item, _expanded: !item._expanded } : item))
-                        )
-                      }
+                      onClick={() => toggleTaskExpanded(task._id)}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-base font-medium text-slate-100">{task.title}</div>
@@ -671,13 +838,31 @@ const EmployeeDashboard = () => {
                     <div className="mt-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Latest Progress</div>
                       <div className="mt-2">
-                        <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
+                        {task._expanded ? (
+                          loadingTaskDetailsId === task._id && !Array.isArray(task.progressLogs) ? (
+                            <div className="text-sm text-slate-400">Loading task details...</div>
+                          ) : (
+                            <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
+                          )
+                        ) : (
+                          <button
+                            className="text-[11px] font-medium text-brand-300"
+                            type="button"
+                            onClick={() => toggleTaskExpanded(task._id)}
+                          >
+                            Click this task to open details
+                          </button>
+                        )}
                       </div>
-                      <div className="mt-2">{renderProofHistoryButton(task)}</div>
-                      <div className="mt-2">
-                        <DailyProgressStatusBadge status={task.dailyProgressStatus} />
-                      </div>
-                      <TaskProgressReview review={task.progressReview} compact />
+                      {task._expanded ? (
+                        <>
+                          <div className="mt-2">{renderProofHistoryButton(task)}</div>
+                          <div className="mt-2">
+                            <DailyProgressStatusBadge status={task.dailyProgressStatus} />
+                          </div>
+                          <TaskProgressReview review={task.progressReview} compact />
+                        </>
+                      ) : null}
                     </div>
                     <div className="mt-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
@@ -693,7 +878,11 @@ const EmployeeDashboard = () => {
                     </div>
                     {task._expanded && (
                       <div className="mt-5 border-t border-slate-800 pt-4">
-                        {renderTaskDetails(task, true)}
+                        {loadingTaskDetailsId === task._id && !Array.isArray(task.progressLogs) ? (
+                          <div className="text-sm text-slate-400">Loading task details...</div>
+                        ) : (
+                          renderTaskDetails(task, true)
+                        )}
                       </div>
                     )}
                   </div>
@@ -722,11 +911,7 @@ const EmployeeDashboard = () => {
                           <td className="py-3 pr-4 text-slate-200">
                             <button
                               className="flex items-center gap-2 text-left"
-                              onClick={() =>
-                                setTasks((prev) =>
-                                  prev.map((item) => (item._id === task._id ? { ...item, _expanded: !item._expanded } : item))
-                                )
-                              }
+                              onClick={() => toggleTaskExpanded(task._id)}
                             >
                               <span className="text-xs text-slate-400">{task._expanded ? "v" : ">"}</span>
                               <span>{task.title}</span>
@@ -736,12 +921,28 @@ const EmployeeDashboard = () => {
                           <td className="break-words py-3 pr-4 text-slate-200">{task.deadlineLabel}</td>
                           <td className="break-words py-3 pr-4 text-slate-200">{task.timeSpent}</td>
                           <td className="min-w-[14rem] break-words py-3 pr-4 text-slate-200">
-                            <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
-                            <div className="mt-2">{renderProofHistoryButton(task)}</div>
-                            <div className="mt-2">
-                              <DailyProgressStatusBadge status={task.dailyProgressStatus} />
-                            </div>
-                            <TaskProgressReview review={task.progressReview} compact />
+                            {task._expanded ? (
+                              <>
+                                {loadingTaskDetailsId === task._id && !Array.isArray(task.progressLogs) ? (
+                                  <div className="text-sm text-slate-400">Loading task details...</div>
+                                ) : (
+                                  <TaskProgressSummary latestProgressLog={task.latestProgressLog} progressLogs={task.progressLogs} />
+                                )}
+                                <div className="mt-2">{renderProofHistoryButton(task)}</div>
+                                <div className="mt-2">
+                                  <DailyProgressStatusBadge status={task.dailyProgressStatus} />
+                                </div>
+                                <TaskProgressReview review={task.progressReview} compact />
+                              </>
+                            ) : (
+                              <button
+                                className="text-[11px] font-medium text-brand-300"
+                                type="button"
+                                onClick={() => toggleTaskExpanded(task._id)}
+                              >
+                                Click this task to open details
+                              </button>
+                            )}
                           </td>
                           <td className="py-3 pr-4 text-slate-200">
                             <select
@@ -758,7 +959,11 @@ const EmployeeDashboard = () => {
                         {task._expanded && (
                           <tr className="border-t border-slate-800 bg-slate-900/30">
                             <td className="py-3 pr-4 text-slate-300" colSpan={6}>
-                              {renderTaskDetails(task)}
+                              {loadingTaskDetailsId === task._id && !Array.isArray(task.progressLogs) ? (
+                                <div className="text-sm text-slate-400">Loading task details...</div>
+                              ) : (
+                                renderTaskDetails(task)
+                              )}
                             </td>
                           </tr>
                         )}

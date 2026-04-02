@@ -1,7 +1,8 @@
 import dayjs from "dayjs";
+import { createReadStream } from "fs";
 import fs from "fs/promises";
 import { z } from "zod";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import path from "path";
 import Task from "../models/Task.js";
 import Project from "../models/Project.js";
@@ -10,6 +11,8 @@ import { startTimer, stopTimer, markDelay, endOtherActiveTasks } from "../servic
 import { notifyDelay, notifyComplete, notifyDelaySms, notifyAssigned } from "../services/notificationService.js";
 import { logAudit } from "../services/auditService.js";
 import { getRuntimeVerificationMode, queueRuntimeVerificationJob } from "../services/runtimeVerificationService.js";
+
+const MAX_TASK_EVIDENCE_FILE_SIZE = 1000 * 1024 * 1024;
 
 const taskSchema = z.object({
   projectId: z.string(),
@@ -35,8 +38,9 @@ const evidenceAttachmentSchema = z
   .object({
     filename: z.string().trim().min(1).max(240),
     mimetype: z.string().trim().min(1).max(160),
-    size: z.number().int().positive().max(25 * 1024 * 1024),
-    url: z.string().trim().min(1).max(500)
+    size: z.number().int().positive().max(MAX_TASK_EVIDENCE_FILE_SIZE),
+    url: z.string().trim().min(1).max(500),
+    hash: z.string().trim().min(1).max(128).optional()
   })
   .nullable()
   .optional();
@@ -57,7 +61,7 @@ const progressLogSchema = z.object({
   ]),
   affectedArea: z.string().trim().min(3).max(160),
   progressState: z.enum(["started", "partial", "completed", "blocked"]),
-  evidenceType: z.enum(["none", "commit", "screenshot", "preview", "figma", "api_test", "document", "issue", "other"]),
+  evidenceType: z.enum(["none", "archive", "commit", "screenshot", "preview", "figma", "api_test", "document", "issue", "other"]),
   note: z.string().trim().min(10).max(1200),
   evidenceUrl: z.string().trim().max(500).optional().or(z.literal("")),
   evidenceAttachment: evidenceAttachmentSchema
@@ -102,6 +106,13 @@ const toTokenSet = (value) =>
   new Set(
     normalizeText(value)
       .split(/\s+/)
+      .map((token) => {
+        if (token.length <= 3) return token;
+        if (token.endsWith("ies") && token.length > 4) return `${token.slice(0, -3)}y`;
+        if (token.endsWith("es") && token.length > 4) return token.slice(0, -2);
+        if (token.endsWith("s") && token.length > 4) return token.slice(0, -1);
+        return token;
+      })
       .filter((token) => token.length > 2)
   );
 
@@ -118,6 +129,25 @@ const getTokenSimilarity = (left, right) => {
 };
 
 const normalizeEvidenceUrl = (value) => String(value || "").trim().toLowerCase();
+const normalizeFilename = (value) => String(value || "").trim().toLowerCase();
+
+const getEvidenceFingerprint = (log = {}) => {
+  const attachmentHash = String(log?.evidenceAttachment?.hash || "").trim().toLowerCase();
+  if (attachmentHash) return `hash:${attachmentHash}`;
+
+  const attachmentName = normalizeFilename(log?.evidenceAttachment?.filename);
+  const attachmentSize = Number(log?.evidenceAttachment?.size || 0);
+  const attachmentMime = String(log?.evidenceAttachment?.mimetype || "").trim().toLowerCase();
+  if (attachmentName && attachmentSize > 0) {
+    return `file:${attachmentName}:${attachmentSize}:${attachmentMime}`;
+  }
+
+  const normalizedUrl = normalizeEvidenceUrl(getEvidenceReference(log));
+  return normalizedUrl ? `url:${normalizedUrl}` : "";
+};
+
+const getEvidenceAlignmentText = (log = {}) =>
+  `${log?.affectedArea || ""} ${log?.note || ""} ${log?.evidenceAttachment?.filename || ""} ${getEvidenceReference(log) || ""}`;
 
 const stripHtml = (value) =>
   String(value || "")
@@ -177,6 +207,15 @@ const fetchWithTimeout = async (url) => {
     clearTimeout(timer);
   }
 };
+
+const hashFileStream = async (filePath) =>
+  new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
 
 const getEvidenceReference = (log = {}) => log?.evidenceAttachment?.url || log?.evidenceUrl || "";
 
@@ -240,6 +279,14 @@ const getEvidenceValidityFlag = (latest) => {
     };
   }
 
+  if (latest.evidenceType === "archive" && !ARCHIVE_FILE_PATTERN.test(referenceLower)) {
+    return {
+      type: "evidence_type_mismatch",
+      severity: "warning",
+      message: "Project archive evidence should be uploaded as a ZIP, RAR, or 7Z file."
+    };
+  }
+
   if (latest.evidenceType === "screenshot" && !(attachmentMime.startsWith("image/") || IMAGE_FILE_PATTERN.test(referenceLower))) {
     return {
       type: "evidence_type_mismatch",
@@ -273,15 +320,17 @@ const getEvidenceValidityFlag = (latest) => {
 const getTaskAlignmentFlag = (task, latest, review) => {
   if (!latest) return null;
   const taskReference = `${task?.title || ""} ${task?.description || ""} ${task?.roleContribution || ""}`;
-  const latestReference = `${latest?.affectedArea || ""} ${latest?.note || ""}`;
-  const alignmentScore = getTokenSimilarity(taskReference, latestReference);
+  const taskTitleReference = `${task?.title || ""} ${task?.roleContribution || ""}`;
+  const latestReference = getEvidenceAlignmentText(latest);
+  const alignmentScore = Math.max(getTokenSimilarity(taskReference, latestReference), getTokenSimilarity(taskTitleReference, latestReference));
+  const minimumAlignmentThreshold = latest?.evidenceType === "archive" ? 0.06 : LOW_TASK_ALIGNMENT_THRESHOLD;
   review.taskAlignmentScore = alignmentScore;
 
   if (toTokenSet(taskReference).size === 0 || toTokenSet(latestReference).size === 0) {
     return null;
   }
 
-  if (alignmentScore < LOW_TASK_ALIGNMENT_THRESHOLD) {
+  if (alignmentScore < minimumAlignmentThreshold) {
     return {
       type: "task_scope_mismatch",
       severity: "warning",
@@ -313,49 +362,58 @@ const buildProgressReview = (task = {}) => {
   }
 
   const previousLogs = allLogs.slice(0, -1);
-  const latestText = `${latest.affectedArea || ""} ${latest.note || ""}`;
+  const latestNoteText = String(latest.note || "");
   const latestEvidenceUrl = normalizeEvidenceUrl(getEvidenceReference(latest));
+  const latestEvidenceFingerprint = getEvidenceFingerprint(latest);
   const latestArea = normalizeText(latest.affectedArea);
   const latestWorkType = String(latest.workType || "").trim().toLowerCase();
 
   const exactDuplicateMatches = [];
-  const similarMatches = [];
   const repeatedAreaMatches = [];
   const reusedEvidenceMatches = [];
 
   previousLogs.forEach((candidate) => {
-    const candidateText = `${candidate.affectedArea || ""} ${candidate.note || ""}`;
-    const similarity = getTokenSimilarity(latestText, candidateText);
+    const candidateNoteText = String(candidate.note || "");
+    const similarity = getTokenSimilarity(latestNoteText, candidateNoteText);
+    const sameNormalizedNote =
+      normalizeText(latestNoteText) &&
+      normalizeText(latestNoteText) === normalizeText(candidateNoteText);
     const sameArea = latestArea && latestArea === normalizeText(candidate.affectedArea);
     const sameWorkType = latestWorkType && latestWorkType === String(candidate.workType || "").trim().toLowerCase();
     const candidateEvidenceUrl = normalizeEvidenceUrl(getEvidenceReference(candidate));
     const sameEvidenceUrl = Boolean(latestEvidenceUrl) && latestEvidenceUrl === candidateEvidenceUrl;
+    const candidateEvidenceFingerprint = getEvidenceFingerprint(candidate);
+    const sameEvidenceFingerprint =
+      Boolean(latestEvidenceFingerprint) &&
+      Boolean(candidateEvidenceFingerprint) &&
+      latestEvidenceFingerprint === candidateEvidenceFingerprint;
 
     if (similarity > review.latestSimilarityScore) {
       review.latestSimilarityScore = similarity;
     }
-    if (sameEvidenceUrl) {
+    if (sameEvidenceFingerprint || sameEvidenceUrl) {
       reusedEvidenceMatches.push(candidate);
     }
     if (sameArea && sameWorkType) {
       repeatedAreaMatches.push(candidate);
     }
-    if (similarity >= HIGH_SIMILARITY_THRESHOLD && sameArea && sameWorkType) {
+    const hasAnyEvidence = Boolean(latestEvidenceFingerprint) || Boolean(candidateEvidenceFingerprint) || Boolean(latestEvidenceUrl) || Boolean(candidateEvidenceUrl);
+    const duplicateEvidenceMatch = hasAnyEvidence ? sameEvidenceFingerprint || sameEvidenceUrl : true;
+
+    if (sameNormalizedNote && sameArea && sameWorkType && duplicateEvidenceMatch) {
       exactDuplicateMatches.push(candidate);
-    } else if (similarity >= MEDIUM_SIMILARITY_THRESHOLD && sameArea) {
-      similarMatches.push(candidate);
     }
   });
 
   review.repeatedEvidenceCount = reusedEvidenceMatches.length;
-  review.similarUpdateCount = exactDuplicateMatches.length + similarMatches.length;
+  review.similarUpdateCount = exactDuplicateMatches.length;
   review.repeatedAreaCount = repeatedAreaMatches.length;
 
   if (exactDuplicateMatches.length > 0) {
     review.flags.push({
       type: "near_duplicate_update",
       severity: "high",
-      message: "The latest update is very similar to another earlier submission for the same area."
+      message: "The latest update exactly matches another earlier submission for the same area."
     });
   }
 
@@ -367,14 +425,6 @@ const buildProgressReview = (task = {}) => {
         reusedEvidenceMatches.length > 1
           ? "The same evidence was reused multiple times across the task submission history."
           : "The same evidence was reused from an earlier submission for this task."
-    });
-  }
-
-  if (similarMatches.length > 0 || repeatedAreaMatches.length >= 2) {
-    review.flags.push({
-      type: "low_change_pattern",
-      severity: "warning",
-      message: "Multiple submissions for this area look repetitive across the task history. Review whether there are real changes or only minor edits."
     });
   }
 
@@ -400,16 +450,24 @@ const buildProgressReview = (task = {}) => {
 const buildAutomatedVerification = async (task, entry) => {
   const checks = [];
   const taskReference = `${task?.title || ""} ${task?.description || ""} ${task?.roleContribution || ""}`;
-  const submissionReference = `${entry?.affectedArea || ""} ${entry?.note || ""}`;
+  const submissionReference = getEvidenceAlignmentText(entry);
   const taskAlignmentScore = getTokenSimilarity(taskReference, submissionReference);
   const evidenceReference = String(getEvidenceReference(entry) || "").trim();
   const evidenceLower = evidenceReference.toLowerCase();
+  const minimumAlignmentThreshold = entry?.evidenceType === "archive" ? 0.06 : LOW_TASK_ALIGNMENT_THRESHOLD;
   let evidenceAlignmentScore = 0;
 
   if (taskAlignmentScore >= 0.18) {
     addVerificationCheck(checks, "Task alignment", "pass", "The submission note aligns with the assigned task details.");
-  } else if (taskAlignmentScore >= LOW_TASK_ALIGNMENT_THRESHOLD) {
-    addVerificationCheck(checks, "Task alignment", "warning", "The submission note only partially matches the assigned task details.");
+  } else if (taskAlignmentScore >= minimumAlignmentThreshold) {
+    addVerificationCheck(
+      checks,
+      "Task alignment",
+      entry?.evidenceType === "archive" ? "pass" : "warning",
+      entry?.evidenceType === "archive"
+        ? "The submitted archive appears relevant to the assigned task, although the text match is only partial."
+        : "The submission note only partially matches the assigned task details."
+    );
   } else {
     addVerificationCheck(checks, "Task alignment", "warning", "The submission note does not clearly match the assigned task details yet. Manager review is recommended.");
   }
@@ -474,6 +532,12 @@ const buildAutomatedVerification = async (task, entry) => {
           }
         } else if (ARCHIVE_FILE_PATTERN.test(extension)) {
           addVerificationCheck(checks, "Archive execution", "pass", "The project archive was uploaded successfully. Runtime verification will continue separately.");
+        } else if (IMAGE_FILE_PATTERN.test(extension) || attachmentMime.startsWith("image/")) {
+          addVerificationCheck(checks, "Image evidence", "warning", "The image proof was uploaded successfully, but automated visual confirmation is limited. Manager review is still recommended.");
+        } else if (extension === ".pdf" || attachmentMime.includes("pdf")) {
+          addVerificationCheck(checks, "Document evidence", "warning", "The PDF proof was uploaded successfully, but deep document-content verification is limited without manual review.");
+        } else if (extension === ".doc" || extension === ".docx" || attachmentMime.includes("word") || attachmentMime.includes("officedocument")) {
+          addVerificationCheck(checks, "Document evidence", "warning", "The Word document was uploaded successfully, but deep document-content verification is limited without manual review.");
         } else {
           addVerificationCheck(checks, "Uploaded content", "pass", "The file format is valid. Deeper automated inspection is limited for this file type, but the proof was accepted.");
         }
@@ -570,7 +634,7 @@ const getInferredStartFromTrackedTime = (task) => {
   return new Date(endDate.getTime() - trackedMinutes * 60 * 1000);
 };
 
-const toTaskResponse = (task, options = {}) => {
+export const toTaskResponse = (task, options = {}) => {
   const rawTask = typeof task?.toObject === "function" ? task.toObject() : task;
   const firstProgressAt = getFirstProgressAt(rawTask?.progressLogs);
   const inferredStartAt = getInferredStartFromTrackedTime(rawTask);
@@ -642,7 +706,7 @@ const ensureTaskAccess = async (req, task) => {
 };
 
 const emitTaskUpdated = (req, task) => {
-  req.app.get("io").emit("task:updated", task);
+  req.app.get("io").emit("task:updated", toTaskResponse(task));
 };
 
 export const createTask = async (req, res) => {
@@ -661,7 +725,7 @@ export const createTask = async (req, res) => {
     entityId: task._id,
     after: task.toObject()
   });
-  req.app.get("io").emit("task:created", task);
+  req.app.get("io").emit("task:created", toTaskResponse(task));
   res.status(201).json(toTaskResponse(task));
 };
 
@@ -760,11 +824,13 @@ export const uploadTaskEvidence = async (req, res) => {
 
   const file = req.file;
   const url = `/uploads/task-evidence/${path.basename(file.path)}`;
+  const hash = await hashFileStream(file.path);
   return res.status(201).json({
     filename: file.originalname,
     mimetype: file.mimetype,
     size: file.size,
-    url
+    url,
+    hash
   });
 };
 
@@ -836,11 +902,16 @@ export const recheckTaskProgressProof = async (req, res) => {
   }
 
   const evidenceReference = String(getEvidenceReference(entry) || "").trim();
+  if (!evidenceReference) {
+    return res.status(400).json({ message: "This proof entry does not have an attached evidence link or file to recheck." });
+  }
+
   entry.verification = await buildAutomatedVerification(task, entry);
   if (getRuntimeVerificationMode(evidenceReference)) {
     entry.verification = await queueRuntimeVerificationJob(task, entry);
   }
 
+  task.markModified("progressLogs");
   await task.save();
   await logAudit({
     actorId: req.user?.id,

@@ -35,9 +35,9 @@ const EVIDENCE_TYPE_LABELS = {
 };
 
 const VERIFICATION_STYLES = {
-  pass: "border-emerald-700/60 bg-emerald-950/70 text-emerald-100",
-  warning: "border-amber-700/60 bg-amber-950/60 text-amber-100",
-  fail: "border-rose-700/60 bg-rose-950/60 text-rose-100"
+  pass: "border-emerald-300 bg-emerald-100 text-emerald-950",
+  warning: "border-amber-300 bg-amber-100 text-amber-950",
+  fail: "border-rose-300 bg-rose-100 text-rose-950"
 };
 
 const VERIFICATION_LABELS = {
@@ -92,11 +92,11 @@ const TaskProgressSummary = ({ progressLogs = [], latestProgressLog = null, show
           </span>
         </div>
         {latest.affectedArea ? (
-          <div className="mt-2 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          <div className="mt-2 text-[10px] font-medium uppercase tracking-wide text-slate-700">
             {areaPreview}
           </div>
         ) : null}
-        <div className="mt-1 text-[11px] leading-4 text-slate-300">{notePreview}</div>
+        <div className="mt-1 text-[11px] leading-4 text-slate-700">{notePreview}</div>
         {showEvidence && evidenceReference ? (
           <a
             className="mt-2 inline-flex items-center text-[11px] font-medium text-blue-400 hover:text-blue-300 hover:underline"
@@ -131,11 +131,11 @@ const TaskProgressSummary = ({ progressLogs = [], latestProgressLog = null, show
         ) : null}
       </div>
       {latest.affectedArea ? (
-        <div className="mt-2 break-words text-[11px] uppercase tracking-wide text-slate-500">
+        <div className="mt-2 break-words text-[11px] uppercase tracking-wide text-slate-700">
           Area: {areaPreview}
         </div>
       ) : null}
-      <div className="mt-1 break-words text-slate-400">{notePreview}</div>
+      <div className="mt-1 break-words text-slate-700">{notePreview}</div>
       {showEvidence && evidenceReference && (
         <a
           className="mt-1 inline-block break-all text-blue-400 hover:text-blue-300 hover:underline"
@@ -147,7 +147,7 @@ const TaskProgressSummary = ({ progressLogs = [], latestProgressLog = null, show
         </a>
       )}
       {latest?.verification?.summary ? (
-        <div className="mt-2 text-[11px] text-slate-500">{latest.verification.summary}</div>
+        <div className="mt-2 text-[11px] text-slate-700">{latest.verification.summary}</div>
       ) : null}
     </div>
   );

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import Task from "../models/Task.js";
+import { toTaskResponse } from "./taskController.js";
 import { markDelay, endOtherActiveTasks } from "../services/timeService.js";
 
 const bulkSchema = z.object({
@@ -16,6 +17,7 @@ export const bulkUpdateTasks = async (req, res) => {
   const tasks = await Task.find({ _id: { $in: payload.taskIds } });
   const now = new Date();
   let modified = 0;
+  const updatedTasks = [];
 
   for (const task of tasks) {
     let changed = false;
@@ -54,9 +56,11 @@ export const bulkUpdateTasks = async (req, res) => {
 
     await markDelay(task);
     await task.save();
-    req.app.get("io").emit("task:updated", task);
+    const taskResponse = toTaskResponse(task);
+    req.app.get("io").emit("task:updated", taskResponse);
+    updatedTasks.push(taskResponse);
     modified += 1;
   }
 
-  res.json({ modified });
+  res.json({ modified, tasks: updatedTasks });
 };

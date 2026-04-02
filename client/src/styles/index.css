@@ -322,6 +322,7 @@ body::-webkit-scrollbar {
   .card::after {
     opacity: 0.45;
   }
+
 }
 
 .sidebar-shell .grid > * {

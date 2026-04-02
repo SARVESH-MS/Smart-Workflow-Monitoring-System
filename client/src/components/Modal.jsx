@@ -2,11 +2,23 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const ANIMATION_MS = 220;
+const MODAL_MAX_WIDTH = {
+  sm: "30rem",
+  md: "42rem",
+  lg: "56rem",
+  xl: "72rem"
+};
 
-const Modal = ({ open, title, children, onClose }) => {
+const Modal = ({ open, title, children, onClose, size = "md" }) => {
   const [mounted, setMounted] = useState(Boolean(open));
   const [visible, setVisible] = useState(Boolean(open));
   const closeTimerRef = useRef(null);
+  const maxWidth = MODAL_MAX_WIDTH[size] || MODAL_MAX_WIDTH.md;
+  const theme =
+    typeof window !== "undefined"
+      ? localStorage.getItem("swms_theme") || localStorage.getItem("swms_dashboard_theme") || "dark"
+      : "dark";
+  const themeClass = theme === "light" ? "dashboard-theme-light" : "dashboard-theme-dark";
 
   useEffect(() => {
     if (open) {
@@ -71,14 +83,14 @@ const Modal = ({ open, title, children, onClose }) => {
 
   const modalUi = (
     <div
-      className={`fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 sm:p-6 overflow-hidden overscroll-contain touch-none transition-opacity duration-200 ease-out ${
+      className={`${themeClass} fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 sm:p-6 overflow-hidden overscroll-contain touch-none transition-opacity duration-200 ease-out ${
         visible ? "opacity-100" : "opacity-0"
       }`}
       onPointerDown={handleOverlayPointerDown}
       role="presentation"
     >
       <div
-        className={`card w-full max-w-xl max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] flex min-h-0 flex-col overflow-hidden touch-auto transition-[transform,opacity] duration-200 ease-out ${
+        className={`card w-full max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] flex min-h-0 flex-col overflow-hidden touch-auto transition-[transform,opacity] duration-200 ease-out ${
           visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-[0.98] opacity-0"
         }`}
         role="dialog"
@@ -86,6 +98,7 @@ const Modal = ({ open, title, children, onClose }) => {
         onPointerDown={(e) => e.stopPropagation()}
         style={{
           animation: "none",
+          maxWidth,
           // `.card` overrides Tailwind transition utilities; force opacity + transform animation here.
           transition: `transform ${ANIMATION_MS}ms ease-out, opacity ${ANIMATION_MS}ms ease-out`
         }}

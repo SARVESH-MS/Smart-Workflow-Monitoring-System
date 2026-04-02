@@ -58,6 +58,7 @@ const AdminDashboard = () => {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [draggedStage, setDraggedStage] = useState("");
+  const statsRefreshTimerRef = useRef(null);
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -93,6 +94,60 @@ const AdminDashboard = () => {
     setStats(statsData);
     // Invalidate cached task lists so graphs can re-fetch when needed.
     setChartTaskLists(null);
+  };
+
+  const refreshStatsOnly = async () => {
+    const statsData = await summary();
+    setStats(statsData);
+  };
+
+  const queueStatsRefresh = () => {
+    window.clearTimeout(statsRefreshTimerRef.current);
+    statsRefreshTimerRef.current = window.setTimeout(() => {
+      refreshStatsOnly();
+    }, 180);
+  };
+
+  const getProjectNameForTask = (task, projectList = projects) =>
+    projectList.find((project) => String(project._id) === String(task?.projectId))?.name || task?.projectName || "";
+
+  const applyTaskToChartLists = (task) => {
+    setChartTaskLists((prev) => {
+      if (!prev || !task?._id) return prev;
+      const nextTask = {
+        ...task,
+        projectName: getProjectNameForTask(task)
+      };
+      const withoutTask = {
+        completedTasks: prev.completedTasks.filter((item) => String(item._id) !== String(task._id)),
+        remainingTasks: prev.remainingTasks.filter((item) => String(item._id) !== String(task._id)),
+        delayedTasks: prev.delayedTasks.filter((item) => String(item._id) !== String(task._id)),
+        onTimeTasks: prev.onTimeTasks.filter((item) => String(item._id) !== String(task._id))
+      };
+      return {
+        completedTasks: nextTask.status === "done" ? [nextTask, ...withoutTask.completedTasks] : withoutTask.completedTasks,
+        remainingTasks: nextTask.status !== "done" ? [nextTask, ...withoutTask.remainingTasks] : withoutTask.remainingTasks,
+        delayedTasks: nextTask.isDelayed ? [nextTask, ...withoutTask.delayedTasks] : withoutTask.delayedTasks,
+        onTimeTasks: !nextTask.isDelayed ? [nextTask, ...withoutTask.onTimeTasks] : withoutTask.onTimeTasks
+      };
+    });
+  };
+
+  const applyProjectToChartLists = (project) => {
+    setChartTaskLists((prev) => {
+      if (!prev || !project?._id) return prev;
+      const applyProjectName = (task) =>
+        String(task.projectId) === String(project._id)
+          ? { ...task, projectName: project.name }
+          : task;
+
+      return {
+        completedTasks: prev.completedTasks.map(applyProjectName),
+        remainingTasks: prev.remainingTasks.map(applyProjectName),
+        delayedTasks: prev.delayedTasks.map(applyProjectName),
+        onTimeTasks: prev.onTimeTasks.map(applyProjectName)
+      };
+    });
   };
 
   const loadUsersAndRequests = async () => {
@@ -146,22 +201,47 @@ const AdminDashboard = () => {
   }, []);
   useEffect(() => {
     const socket = createSocket();
-    socket.on("task:created", loadOverview);
-    socket.on("project:created", loadOverview);
-    socket.on("project:updated", loadOverview);
-    socket.on("task:updated", loadOverview);
+    socket.on("task:created", (task) => {
+      applyTaskToChartLists(task);
+      queueStatsRefresh();
+    });
+    socket.on("task:updated", (task) => {
+      applyTaskToChartLists(task);
+      queueStatsRefresh();
+    });
+    socket.on("project:created", (project) => {
+      setProjects((prev) =>
+        prev.some((item) => String(item._id) === String(project?._id))
+          ? prev
+          : [project, ...prev]
+      );
+      applyProjectToChartLists(project);
+      queueStatsRefresh();
+    });
+    socket.on("project:updated", (project) => {
+      setProjects((prev) =>
+        prev.some((item) => String(item._id) === String(project?._id))
+          ? prev.map((item) => (String(item._id) === String(project?._id) ? { ...item, ...project } : item))
+          : [project, ...prev]
+      );
+      applyProjectToChartLists(project);
+      queueStatsRefresh();
+    });
     socket.on("presence:update", () => {
       if (sessionMonitorOpen) {
         loadSessionData();
       }
     });
-    return () => socket.disconnect();
+    return () => {
+      window.clearTimeout(statsRefreshTimerRef.current);
+      socket.disconnect();
+    };
   }, [sessionMonitorOpen]);
 
   useEffect(() => {
     if (!sessionMonitorOpen) return undefined;
     loadSessionData();
-    const timer = setInterval(loadSessionData, 10000);
+    const timer = setInterval(loadSessionData, 20000);
     return () => clearInterval(timer);
   }, [sessionMonitorOpen]);
 
@@ -255,7 +335,10 @@ const AdminDashboard = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await createProject(form);
+    const createdProject = await createProject(form);
+    setProjects((prev) => [createdProject, ...prev]);
+    applyProjectToChartLists(createdProject);
+    queueStatsRefresh();
     setOpen(false);
     setForm({
       name: "",
@@ -264,7 +347,6 @@ const AdminDashboard = () => {
       managerId: "",
       workflow: defaultWorkflow
     });
-    loadOverview();
   };
 
   return (

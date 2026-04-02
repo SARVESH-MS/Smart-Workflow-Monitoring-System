@@ -6,7 +6,8 @@ const TaskEvidenceAttachmentSchema = new mongoose.Schema(
     filename: { type: String, required: true },
     mimetype: { type: String, required: true },
     size: { type: Number, required: true },
-    url: { type: String, required: true }
+    url: { type: String, required: true },
+    hash: { type: String, default: "" }
   },
   { _id: false }
 );
