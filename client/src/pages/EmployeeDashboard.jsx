@@ -196,6 +196,12 @@ const EmployeeDashboard = () => {
         );
       });
     });
+    socket.on("task:deleted", (task) => {
+      const taskId = String(task?._id || "");
+      if (!taskId) return;
+      setTasks((prev) => prev.filter((item) => String(item._id) !== taskId));
+      setLoadingTaskDetailsId((current) => (String(current) === taskId ? "" : current));
+    });
     return () => socket.disconnect();
   }, [id]);
   useEffect(() => {

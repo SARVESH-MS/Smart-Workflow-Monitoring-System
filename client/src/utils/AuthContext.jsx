@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { getToken, getUser, setAuth, clearAuth } from "./auth.js";
 import { me, logout as logoutApi } from "../api/auth.js";
+import { createSocket } from "./socket.js";
 
 const AuthContext = createContext(null);
 
@@ -51,6 +52,20 @@ export const AuthProvider = ({ children }) => {
     window.addEventListener("swms:user-updated", handleUserUpdated);
     return () => window.removeEventListener("swms:user-updated", handleUserUpdated);
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const socket = createSocket();
+    socket.on("user:updated", (nextUser) => {
+      if (!nextUser) return;
+      const nextUserId = String(nextUser.id || nextUser._id || "");
+      const currentUserId = String(user?.id || user?._id || "");
+      if (!nextUserId || nextUserId !== currentUserId) return;
+      setUser(nextUser);
+      setAuth(token, nextUser);
+    });
+    return () => socket.disconnect();
+  }, [token, user?.id, user?._id]);
 
   const value = useMemo(
     () => ({

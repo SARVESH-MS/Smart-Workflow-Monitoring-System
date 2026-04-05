@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { listProjects } from "../api/projects.js";
-import { listTasks, getTask, createTask, updateTask, recheckTaskProof } from "../api/tasks.js";
+import { listTasks, getTask, createTask, updateTask, deleteTask, recheckTaskProof } from "../api/tasks.js";
 import api from "../api/client.js";
 import StatCard from "../components/StatCard.jsx";
 import Modal from "../components/Modal.jsx";
@@ -19,6 +19,8 @@ import TaskProgressReview from "../components/TaskProgressReview.jsx";
 import DailyProgressStatusBadge from "../components/DailyProgressStatusBadge.jsx";
 import TaskProofHistory from "../components/TaskProofHistory.jsx";
 import DisclosureIcon from "../components/DisclosureIcon.jsx";
+const DelayChart = React.lazy(() => import("../charts/DelayChart.jsx"));
+const CompletionChart = React.lazy(() => import("../charts/CompletionChart.jsx"));
 import { listMyEmailUnreadCount } from "../api/emails.js";
 import { listMyNotificationUnreadCount } from "../api/notifications.js";
 import { getUnreadForumCount } from "../api/forum.js";
@@ -76,6 +78,7 @@ const ManagerDashboard = () => {
   const [recheckFeedback, setRecheckFeedback] = useState({ message: "", tone: "info" });
   const [statusUpdatingTaskId, setStatusUpdatingTaskId] = useState("");
   const [openProgressTaskId, setOpenProgressTaskId] = useState("");
+  const [deletingTaskId, setDeletingTaskId] = useState("");
   const [form, setForm] = useState({
     projectId: "",
     userId: "",
@@ -161,6 +164,8 @@ const ManagerDashboard = () => {
     const isRelevantTask = (task) =>
       projectIdsRef.current.length === 0 || projectIdsRef.current.includes(String(task?.projectId || ""));
     const isRelevantProject = (project) => String(project?.managerId || "") === String(id);
+    const isRelevantTeamMember = (member) =>
+      String(member?.managerId || "") === String(id) && String(member?.role || "") === "employee";
     socket.on("task:created", (task) => {
       if (!isRelevantTask(task)) return;
       setTasks((prev) =>
@@ -180,6 +185,14 @@ const ManagerDashboard = () => {
         }
         return prev.map((item) => (String(item._id) === String(task?._id) ? { ...item, ...task } : item));
       });
+    });
+    socket.on("task:deleted", (task) => {
+      const taskId = String(task?._id || "");
+      if (!taskId) return;
+      setTasks((prev) => prev.filter((item) => String(item._id) !== taskId));
+      setSelectedTaskIds((prev) => prev.filter((id) => String(id) !== taskId));
+      setOpenProgressTaskId((current) => (String(current) === taskId ? "" : current));
+      setProofHistoryTask((current) => (String(current?._id || "") === taskId ? null : current));
     });
     socket.on("project:created", (project) => {
       if (!isRelevantProject(project)) return;
@@ -208,6 +221,36 @@ const ManagerDashboard = () => {
       }
       setSelectedProjectId((prev) => prev || project?._id || "");
     });
+    socket.on("user:created", (member) => {
+      if (!isRelevantTeamMember(member)) return;
+      setTeam((prev) =>
+        prev.some((item) => String(item._id) === String(member.id || member._id))
+          ? prev
+          : [
+              {
+                ...member,
+                _id: member.id || member._id
+              },
+              ...prev
+            ]
+      );
+    });
+    socket.on("user:updated", (member) => {
+      const memberId = String(member?.id || member?._id || "");
+      if (!memberId) return;
+      setTeam((prev) => {
+        const exists = prev.some((item) => String(item._id) === memberId);
+        if (!isRelevantTeamMember(member)) {
+          return exists ? prev.filter((item) => String(item._id) !== memberId) : prev;
+        }
+        if (!exists) {
+          return [{ ...member, _id: member.id || member._id }, ...prev];
+        }
+        return prev.map((item) =>
+          String(item._id) === memberId ? { ...item, ...member, _id: member.id || member._id } : item
+        );
+      });
+    });
     return () => socket.disconnect();
   }, [id]);
   useEffect(() => {
@@ -234,7 +277,8 @@ const ManagerDashboard = () => {
       { key: "progress", label: "Latest Progress" },
       { key: "deadline", label: "Deadline" },
       { key: "timeSpent", label: "Time Spent" },
-      { key: "status", label: "Status" }
+      { key: "status", label: "Status" },
+      { key: "actions", label: "Actions" }
     ],
     []
   );
@@ -255,21 +299,46 @@ const ManagerDashboard = () => {
     return "none";
   };
 
-  const filteredTasks = tasks.filter((task) => {
-    if (taskScope === "mine" && String(task.userId) !== String(id)) return false;
-    if (filters.status && task.status !== filters.status) return false;
-    if (filters.stage && (task.stage || "Planning") !== filters.stage) return false;
-    return true;
-  });
+  const filteredTasks = useMemo(
+    () =>
+      tasks.filter((task) => {
+        if (taskScope === "mine" && String(task.userId) !== String(id)) return false;
+        if (filters.status && task.status !== filters.status) return false;
+        if (filters.stage && (task.stage || "Planning") !== filters.stage) return false;
+        return true;
+      }),
+    [filters.stage, filters.status, id, taskScope, tasks]
+  );
   const selectedTaskCount = selectedTaskIds.length;
-  const activeTaskCount = filteredTasks.filter((task) => normalizeTaskStatus(task.status) === "in_progress").length;
-  const reviewTaskCount = filteredTasks.filter((task) => getTaskReviewState(task) !== "none").length;
-  const dueSoonTaskCount = filteredTasks.filter((task) => {
-    const deadline = dayjs(getEffectiveDeadlineInput(task) || task.deadline);
-    if (!deadline.isValid() || normalizeTaskStatus(task.status) === "done") return false;
-    const daysLeft = deadline.startOf("day").diff(dayjs().startOf("day"), "day");
-    return daysLeft >= 0 && daysLeft <= 7;
-  }).length;
+  const activeTaskCount = useMemo(
+    () => filteredTasks.filter((task) => normalizeTaskStatus(task.status) === "in_progress").length,
+    [filteredTasks]
+  );
+  const reviewTaskCount = useMemo(
+    () => filteredTasks.filter((task) => getTaskReviewState(task) !== "none").length,
+    [filteredTasks]
+  );
+  const dueSoonTaskCount = useMemo(
+    () =>
+      filteredTasks.filter((task) => {
+        const deadline = dayjs(getEffectiveDeadlineInput(task) || task.deadline);
+        if (!deadline.isValid() || normalizeTaskStatus(task.status) === "done") return false;
+        const daysLeft = deadline.startOf("day").diff(dayjs().startOf("day"), "day");
+        return daysLeft >= 0 && daysLeft <= 7;
+      }).length,
+    [filteredTasks]
+  );
+  const chartTasks = useMemo(() => {
+    const projectNameById = new Map(projects.map((project) => [String(project._id), project.name]));
+    return tasks.map((task) => ({
+      ...task,
+      projectName: projectNameById.get(String(task.projectId)) || ""
+    }));
+  }, [projects, tasks]);
+  const completedTasks = chartTasks.filter((task) => task.status === "done");
+  const remainingTasks = chartTasks.filter((task) => task.status !== "done");
+  const delayedTasks = chartTasks.filter((task) => task.isDelayed);
+  const onTimeTasks = chartTasks.filter((task) => !task.isDelayed);
 
   const mergeTaskUpdate = (updatedTask) => {
     setTasks((prev) => prev.map((task) => (task._id === updatedTask._id ? { ...task, ...updatedTask } : task)));
@@ -324,6 +393,22 @@ const ManagerDashboard = () => {
     }
   };
 
+  const handleDeleteTask = async (taskId, taskTitle) => {
+    if (!taskId || deletingTaskId) return;
+    const confirmed = window.confirm(`Delete "${taskTitle || "this task"}"? This cannot be undone.`);
+    if (!confirmed) return;
+    setDeletingTaskId(taskId);
+    try {
+      await deleteTask(taskId);
+      setTasks((prev) => prev.filter((task) => String(task._id) !== String(taskId)));
+      setSelectedTaskIds((prev) => prev.filter((id) => String(id) !== String(taskId)));
+      setOpenProgressTaskId((current) => (String(current) === String(taskId) ? "" : current));
+      setProofHistoryTask((current) => (String(current?._id || "") === String(taskId) ? null : current));
+    } finally {
+      setDeletingTaskId("");
+    }
+  };
+
   const getEntityId = (value) => {
     if (!value) return "";
     if (typeof value === "string") return value;
@@ -372,6 +457,7 @@ const ManagerDashboard = () => {
     const proofCount = Number(task.proofSubmissionCount || 0);
     const statusToneClass = getTaskStatusToneClass(task.status);
     const isStatusUpdating = statusUpdatingTaskId === task._id;
+    const isDeleting = deletingTaskId === task._id;
     const isProgressOpen = openProgressTaskId === task._id;
     return {
       ...task,
@@ -578,22 +664,56 @@ const ManagerDashboard = () => {
             <div className="mt-2 text-[10px] text-slate-500">{formatDate(task.deadline)}</div>
           )}
         </div>
+      ),
+      actions: (
+        <button
+          type="button"
+          className="btn-ghost px-2 py-1 text-xs border-rose-400/70 text-rose-300 hover:border-rose-300 hover:bg-rose-950/40 hover:text-rose-100"
+          onClick={() => handleDeleteTask(task._id, task.title)}
+          disabled={isDeleting}
+        >
+          {isDeleting ? "Deleting..." : "Delete"}
+        </button>
       )
     };
   });
 
-  const sameStage = (left, right) =>
-    String(left || "Planning").trim().toLowerCase() === String(right || "Planning").trim().toLowerCase();
+  const normalizeStage = (value) => String(value || "Planning").trim().toLowerCase();
+  const sameStage = (left, right) => normalizeStage(left) === normalizeStage(right);
 
-  const selectedProject = projects.find((p) => p._id === selectedProjectId);
-  const kanbanStages = selectedProject?.workflow || [
-    "Planning",
-    "Design",
-    "Development",
-    "Testing",
-    "Done"
-  ];
-  const projectTasks = tasks.filter((t) => getEntityId(t.projectId) === selectedProjectId);
+  const selectedProject = useMemo(
+    () => projects.find((p) => p._id === selectedProjectId),
+    [projects, selectedProjectId]
+  );
+  const kanbanStages = useMemo(
+    () =>
+      selectedProject?.workflow || [
+        "Planning",
+        "Design",
+        "Development",
+        "Testing",
+        "Done"
+      ],
+    [selectedProject]
+  );
+  const projectTasks = useMemo(
+    () => tasks.filter((t) => getEntityId(t.projectId) === selectedProjectId),
+    [selectedProjectId, tasks]
+  );
+  const tasksByStage = useMemo(() => {
+    const map = new Map();
+    projectTasks.forEach((task) => {
+      const key = normalizeStage(task.stage);
+      const list = map.get(key);
+      if (list) {
+        list.push(task);
+      } else {
+        map.set(key, [task]);
+      }
+    });
+    return map;
+  }, [projectTasks]);
+  const getStageTasks = (stage) => tasksByStage.get(normalizeStage(stage)) || [];
 
   const resetKanbanDrag = () => {
     setDraggedTaskId("");
@@ -666,42 +786,51 @@ const ManagerDashboard = () => {
 
   const deadlineChartToday = dayjs().startOf("day");
 
-  const deadlineChartTasks = [...tasks]
-    .map((task) => {
-      const assignedAt = dayjs(task.createdAt || task.updatedAt || task.deadline).startOf("day");
-      const deadlineSource = getEffectiveDeadlineInput(task) || task.deadline;
-      const deadlineAt = dayjs(deadlineSource).endOf("day");
-      const projectName = projects.find((project) => String(project._id) === String(getEntityId(task.projectId)))?.name || "-";
-      const totalWindowDays = Math.max(deadlineAt.startOf("day").diff(assignedAt.startOf("day"), "day"), 1);
-      const activeWindowStart = assignedAt.isAfter(deadlineChartToday) ? assignedAt.startOf("day") : deadlineChartToday;
-      const remainingWindowDays = Math.max(deadlineAt.startOf("day").diff(activeWindowStart, "day"), 0);
-      const daysRemaining = Math.max(deadlineAt.startOf("day").diff(deadlineChartToday, "day"), 0);
-      const originalDeadline = task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "";
-      return {
-        ...task,
-        assignedAt: assignedAt.isValid() ? assignedAt : null,
-        deadlineAt: deadlineAt.isValid() ? deadlineAt : null,
-        totalWindowDays,
-        remainingWindowDays,
-        remainingRatio: Math.max(Math.min(remainingWindowDays / totalWindowDays, 1), 0),
-        daysRemaining,
-        projectName,
-        hasPendingDeadlineEdit: Boolean(deadlineSource && deadlineSource !== originalDeadline),
-        assigneeName: team.find((member) => member._id === task.userId)?.name || "-"
-      };
-    })
-    .filter((task) => task.assignedAt?.isValid() && task.deadlineAt?.isValid())
-    .sort((left, right) => {
-      const assignedDiff = right.assignedAt.valueOf() - left.assignedAt.valueOf();
-      if (assignedDiff !== 0) return assignedDiff;
-      return right.deadlineAt.valueOf() - left.deadlineAt.valueOf();
-    });
+  const deadlineChartTasks = useMemo(
+    () =>
+      [...tasks]
+        .map((task) => {
+          const assignedAt = dayjs(task.createdAt || task.updatedAt || task.deadline).startOf("day");
+          const deadlineSource = getEffectiveDeadlineInput(task) || task.deadline;
+          const deadlineAt = dayjs(deadlineSource).endOf("day");
+          const projectName =
+            projects.find((project) => String(project._id) === String(getEntityId(task.projectId)))?.name || "-";
+          const totalWindowDays = Math.max(deadlineAt.startOf("day").diff(assignedAt.startOf("day"), "day"), 1);
+          const activeWindowStart = assignedAt.isAfter(deadlineChartToday) ? assignedAt.startOf("day") : deadlineChartToday;
+          const remainingWindowDays = Math.max(deadlineAt.startOf("day").diff(activeWindowStart, "day"), 0);
+          const daysRemaining = Math.max(deadlineAt.startOf("day").diff(deadlineChartToday, "day"), 0);
+          const originalDeadline = task.deadline ? dayjs(task.deadline).format("YYYY-MM-DD") : "";
+          return {
+            ...task,
+            assignedAt: assignedAt.isValid() ? assignedAt : null,
+            deadlineAt: deadlineAt.isValid() ? deadlineAt : null,
+            totalWindowDays,
+            remainingWindowDays,
+            remainingRatio: Math.max(Math.min(remainingWindowDays / totalWindowDays, 1), 0),
+            daysRemaining,
+            projectName,
+            hasPendingDeadlineEdit: Boolean(deadlineSource && deadlineSource !== originalDeadline),
+            assigneeName: team.find((member) => member._id === task.userId)?.name || "-"
+          };
+        })
+        .filter((task) => task.assignedAt?.isValid() && task.deadlineAt?.isValid())
+        .sort((left, right) => {
+          const assignedDiff = right.assignedAt.valueOf() - left.assignedAt.valueOf();
+          if (assignedDiff !== 0) return assignedDiff;
+          return right.deadlineAt.valueOf() - left.deadlineAt.valueOf();
+        }),
+    [deadlineChartToday, deadlineEdits, projects, tasks, team]
+  );
 
-  const deadlineChartMaxDeadline = deadlineChartTasks.reduce((max, task) => {
-    if (!task.deadlineAt?.isValid()) return max;
-    if (!max || task.deadlineAt.isAfter(max)) return task.deadlineAt;
-    return max;
-  }, null);
+  const deadlineChartMaxDeadline = useMemo(
+    () =>
+      deadlineChartTasks.reduce((max, task) => {
+        if (!task.deadlineAt?.isValid()) return max;
+        if (!max || task.deadlineAt.isAfter(max)) return task.deadlineAt;
+        return max;
+      }, null),
+    [deadlineChartTasks]
+  );
 
   const handleAssign = async (e) => {
     e.preventDefault();
@@ -777,7 +906,7 @@ const ManagerDashboard = () => {
             {team.map((member) => (
               <div key={member._id} className="flex items-center justify-between">
                 <span>{member.name}</span>
-                <span className="text-xs text-slate-400">{member.teamRole}</span>
+                <span className="text-xs text-slate-400">{formatRoleLabel(member.teamRole)}</span>
               </div>
             ))}
           </div>
@@ -798,33 +927,25 @@ const ManagerDashboard = () => {
         </div>
       </div>
 
-      <div id="projects" className="card scroll-mt-6">
-        <h3 className="text-lg font-semibold">Assigned Projects</h3>
-        <p className="text-sm text-slate-400">Projects assigned by Admin.</p>
-        <div className="mt-4 grid gap-3">
-          {projects.length === 0 && <div className="text-slate-500">No projects assigned.</div>}
-          {projects.map((project) => (
-            <div
-              key={project._id}
-              className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 sm:min-w-[220px]">
-                  <div className="text-sm font-semibold text-slate-200">{project.name}</div>
-                  <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                    {project.description}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-400">
-                  <div className="rounded-full border border-slate-700 px-2 py-1 uppercase">
-                    {project.status}
-                  </div>
-                  <div className="text-right">{formatDate(project.deadline)}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Suspense fallback={<div className="card min-h-[260px] text-sm text-slate-400">Loading chart...</div>}>
+          <DelayChart
+            className="min-h-[260px]"
+            delayed={delayedTasks.length}
+            onTime={onTimeTasks.length}
+            delayedTasks={delayedTasks}
+            onTimeTasks={onTimeTasks}
+          />
+        </Suspense>
+        <Suspense fallback={<div className="card min-h-[260px] text-sm text-slate-400">Loading chart...</div>}>
+          <CompletionChart
+            className="min-h-[260px]"
+            completed={completedTasks.length}
+            total={chartTasks.length}
+            completedTasks={completedTasks}
+            remainingTasks={remainingTasks}
+          />
+        </Suspense>
       </div>
 
       <div id="reports" className="card scroll-mt-6">
@@ -847,19 +968,19 @@ const ManagerDashboard = () => {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+        <div className="card dashboard-stat-card px-4 py-3">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Visible Tasks</div>
           <div className="mt-1 text-2xl font-semibold text-slate-100">{filteredTasks.length}</div>
         </div>
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+        <div className="card dashboard-stat-card px-4 py-3">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">In Progress</div>
           <div className="mt-1 text-2xl font-semibold text-slate-100">{activeTaskCount}</div>
         </div>
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+        <div className="card dashboard-stat-card px-4 py-3">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Needs Review</div>
           <div className="mt-1 text-2xl font-semibold text-slate-100">{reviewTaskCount}</div>
         </div>
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/45 px-4 py-3">
+        <div className="card dashboard-stat-card px-4 py-3">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Due Soon</div>
           <div className="mt-1 text-2xl font-semibold text-slate-100">{dueSoonTaskCount}</div>
         </div>
@@ -1011,6 +1132,10 @@ const ManagerDashboard = () => {
                   <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
                   <div className="mt-2">{task.status}</div>
                 </div>
+                <div className="mt-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Actions</div>
+                  <div className="mt-2">{task.actions}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -1052,6 +1177,35 @@ const ManagerDashboard = () => {
         )}
           </>
         )}
+      </div>
+
+      <div id="projects" className="card scroll-mt-6">
+        <h3 className="text-lg font-semibold">Assigned Projects</h3>
+        <p className="text-sm text-slate-400">Projects assigned by Admin.</p>
+        <div className="mt-4 grid gap-3">
+          {projects.length === 0 && <div className="text-slate-500">No projects assigned.</div>}
+          {projects.map((project) => (
+            <div
+              key={project._id}
+              className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 sm:min-w-[220px]">
+                  <div className="text-sm font-semibold text-slate-200">{project.name}</div>
+                  <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                    {project.description}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                  <div className="rounded-full border border-slate-700 px-2 py-1 uppercase">
+                    {project.status}
+                  </div>
+                  <div className="text-right">{formatDate(project.deadline)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div id="kanban" className="card scroll-mt-6">
@@ -1102,7 +1256,7 @@ const ManagerDashboard = () => {
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
-                setDragHoverStage(stage);
+                setDragHoverStage((current) => (current === stage ? current : stage));
               }}
               onDragLeave={() => {
                 setDragHoverStage((current) => (current === stage ? "" : current));
@@ -1118,39 +1272,37 @@ const ManagerDashboard = () => {
             >
               <div className="text-xs uppercase text-slate-400">{stage}</div>
               <div className="mt-3 grid gap-2">
-                {projectTasks
-                  .filter((t) => sameStage(t.stage, stage))
-                  .map((task) => (
-                    <div
-                      key={task._id}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/plain", task._id);
-                        setDraggedTaskId(task._id);
-                      }}
-                      onDragEnd={resetKanbanDrag}
-                      onTouchStart={(e) => {
-                        const touch = e.touches?.[0];
-                        if (!touch) return;
-                        touchDragRef.current = { taskId: task._id };
-                        setDraggedTaskId(task._id);
-                        setTouchDragCard({
-                          taskId: task._id,
-                          title: task.title,
-                          roleContribution: task.roleContribution,
-                          x: touch.clientX,
-                          y: touch.clientY
-                        });
-                      }}
-                      className={`rounded-lg bg-slate-900 p-2 text-xs text-slate-200 transition ${
-                        draggedTaskId === task._id ? "opacity-60 ring-2 ring-brand-500/30" : ""
-                      }`}
-                    >
-                      <div className="font-semibold">{task.title}</div>
-                      <div className="text-[11px] text-slate-400">{task.roleContribution}</div>
-                    </div>
-                  ))}
-                {projectTasks.filter((t) => sameStage(t.stage, stage)).length === 0 && (
+                {getStageTasks(stage).map((task) => (
+                  <div
+                    key={task._id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", task._id);
+                      setDraggedTaskId(task._id);
+                    }}
+                    onDragEnd={resetKanbanDrag}
+                    onTouchStart={(e) => {
+                      const touch = e.touches?.[0];
+                      if (!touch) return;
+                      touchDragRef.current = { taskId: task._id };
+                      setDraggedTaskId(task._id);
+                      setTouchDragCard({
+                        taskId: task._id,
+                        title: task.title,
+                        roleContribution: task.roleContribution,
+                        x: touch.clientX,
+                        y: touch.clientY
+                      });
+                    }}
+                    className={`rounded-lg bg-slate-900 p-2 text-xs text-slate-200 transition ${
+                      draggedTaskId === task._id ? "opacity-60 ring-2 ring-brand-500/30" : ""
+                    }`}
+                  >
+                    <div className="font-semibold">{task.title}</div>
+                    <div className="text-[11px] text-slate-400">{task.roleContribution}</div>
+                  </div>
+                ))}
+                {getStageTasks(stage).length === 0 && (
                   <div className="rounded-lg border border-dashed border-slate-700 px-3 py-4 text-center text-[11px] text-slate-500">
                     No tasks in this stage
                   </div>

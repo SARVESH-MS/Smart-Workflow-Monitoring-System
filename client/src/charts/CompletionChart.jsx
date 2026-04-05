@@ -30,7 +30,8 @@ const CompletionChart = ({
   total = 0,
   completedTasks = null,
   remainingTasks = null,
-  loadTaskLists = null
+  loadTaskLists = null,
+  className = ""
 }) => {
   const chartRef = useRef(null);
   const [listOpen, setListOpen] = useState(false);
@@ -114,7 +115,7 @@ const CompletionChart = ({
   };
 
   return (
-    <div className="card">
+    <div className={`card ${className}`.trim()}>
       <h3 className="text-lg font-semibold">Completion Rate</h3>
       <div className="dashboard-chart mt-4 h-28 sm:h-40">
         <Doughnut

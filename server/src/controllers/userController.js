@@ -4,6 +4,7 @@ import RegistrationRequest from "../models/RegistrationRequest.js";
 import EmailLog from "../models/EmailLog.js";
 import AuditLog from "../models/AuditLog.js";
 import { getDeviceName } from "../utils/requestMeta.js";
+import { normalizePhoneNumber } from "../utils/phone.js";
 
 const SWMS_PREFIX = "7376231SWMS";
 const sessionCache = { at: 0, data: null };
@@ -19,6 +20,20 @@ const serializeUser = (user) => ({
   managerId: user.managerId,
   teamRole: user.teamRole,
   notificationPrefs: user.notificationPrefs
+});
+
+const serializeRegistrationRequest = (request) => ({
+  _id: request._id,
+  name: request.name,
+  email: request.email,
+  role: request.role,
+  teamRole: request.teamRole,
+  status: request.status,
+  rejectionReason: request.rejectionReason,
+  processedBy: request.processedBy,
+  processedAt: request.processedAt,
+  createdAt: request.createdAt,
+  updatedAt: request.updatedAt
 });
 
 const nextSwmsId = async (role) => {
@@ -65,6 +80,7 @@ const prefsSchema = z.object({
   emailDelay: z.boolean(),
   emailComplete: z.boolean(),
   smsDelay: z.boolean(),
+  smsComplete: z.boolean(),
   smsDailyProgress: z.boolean(),
   desktopDailyProgress: z.boolean()
 });
@@ -88,6 +104,10 @@ export const updatePreferences = async (req, res) => {
     { notificationPrefs: prefs },
     { new: true }
   ).select("-password");
+  const payload = serializeUser(user);
+  const io = req.app.get("io");
+  io.emit("user:updated", payload);
+  io.to(io.getUserRoom(String(user._id))).emit("user:updated", payload);
   res.json({ user: serializeUser(user) });
 };
 
@@ -101,6 +121,10 @@ export const updatePreferencesForUser = async (req, res) => {
   if (!user) {
     return res.status(404).json({ message: "User not found" });
   }
+  const payload = serializeUser(user);
+  const io = req.app.get("io");
+  io.emit("user:updated", payload);
+  io.to(io.getUserRoom(String(user._id))).emit("user:updated", payload);
   res.json({ user: serializeUser(user) });
 };
 
@@ -108,13 +132,17 @@ export const updateProfile = async (req, res) => {
   const payload = profileSchema.parse(req.body);
   const update = {
     name: payload.name,
-    phone: payload.phone || "",
+    phone: payload.phone ? normalizePhoneNumber(payload.phone) : "",
     avatarUrl: payload.avatarUrl || ""
   };
   const user = await User.findByIdAndUpdate(req.user.id, update, { new: true }).select("-password");
   if (!user) {
     return res.status(404).json({ message: "User not found" });
   }
+  const userPayload = serializeUser(user);
+  const io = req.app.get("io");
+  io.emit("user:updated", userPayload);
+  io.to(io.getUserRoom(String(user._id))).emit("user:updated", userPayload);
   res.json({ user: serializeUser(user) });
 };
 
@@ -148,7 +176,7 @@ export const processRegistrationRequest = async (req, res) => {
       return res.status(400).json({ message: "Manager is required for employee approval" });
     }
     const swmsId = await nextSwmsId(request.role);
-    await User.create({
+    const createdUser = await User.create({
       swmsId,
       name: request.name,
       email: request.email,
@@ -157,6 +185,10 @@ export const processRegistrationRequest = async (req, res) => {
       teamRole: request.teamRole || "frontend",
       managerId: request.role === "employee" ? payload.managerId : undefined
     });
+    const userPayload = serializeUser(createdUser);
+    const io = req.app.get("io");
+    io.emit("user:created", userPayload);
+    io.to(io.getUserRoom(String(createdUser._id))).emit("user:updated", userPayload);
     request.status = "approved";
   } else {
     request.status = "rejected";
@@ -166,6 +198,7 @@ export const processRegistrationRequest = async (req, res) => {
   request.processedBy = req.user.id;
   request.processedAt = new Date();
   await request.save();
+  req.app.get("io").emit("registration-request:updated", serializeRegistrationRequest(request));
 
   await EmailLog.create({
     to: request.email,

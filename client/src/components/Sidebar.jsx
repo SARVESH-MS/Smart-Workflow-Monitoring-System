@@ -168,8 +168,6 @@ export const SidebarProfilePanel = ({
   const [prefsForm, setPrefsForm] = useState({
     emailDelay: true,
     emailComplete: false,
-    smsDelay: false,
-    smsDailyProgress: false,
     desktopDailyProgress: true
   });
 
@@ -184,8 +182,6 @@ export const SidebarProfilePanel = ({
     setPrefsForm({
       emailDelay: Boolean(user?.notificationPrefs?.emailDelay),
       emailComplete: Boolean(user?.notificationPrefs?.emailComplete),
-      smsDelay: Boolean(user?.notificationPrefs?.smsDelay),
-      smsDailyProgress: Boolean(user?.notificationPrefs?.smsDailyProgress),
       desktopDailyProgress:
         user?.notificationPrefs?.desktopDailyProgress === undefined
           ? true
@@ -211,8 +207,6 @@ export const SidebarProfilePanel = ({
     setPrefsForm({
       emailDelay: Boolean(user?.notificationPrefs?.emailDelay),
       emailComplete: Boolean(user?.notificationPrefs?.emailComplete),
-      smsDelay: Boolean(user?.notificationPrefs?.smsDelay),
-      smsDailyProgress: Boolean(user?.notificationPrefs?.smsDailyProgress),
       desktopDailyProgress:
         user?.notificationPrefs?.desktopDailyProgress === undefined
           ? true
@@ -437,18 +431,8 @@ export const SidebarProfilePanel = ({
                           onChange={(e) => setPrefsForm((prev) => ({ ...prev, emailComplete: e.target.checked }))}
                         />
                       </label>
-                      <label className="flex items-center justify-between">
-                        <span>SMS on delays</span>
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-blue-500"
-                          checked={prefsForm.smsDelay}
-                          disabled={!isEditingProfile}
-                          onChange={(e) => setPrefsForm((prev) => ({ ...prev, smsDelay: e.target.checked }))}
-                        />
-                      </label>
                       <label className="flex items-center justify-between gap-4">
-                        <span>Laptop popup for daily progress</span>
+                        <span>Desktop popup notifications</span>
                         <input
                           type="checkbox"
                           className="h-4 w-4 accent-blue-500"
@@ -456,18 +440,6 @@ export const SidebarProfilePanel = ({
                           disabled={!isEditingProfile}
                           onChange={(e) =>
                             setPrefsForm((prev) => ({ ...prev, desktopDailyProgress: e.target.checked }))
-                          }
-                        />
-                      </label>
-                      <label className="flex items-center justify-between gap-4">
-                        <span>SMS for daily progress reminder</span>
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-blue-500"
-                          checked={prefsForm.smsDailyProgress}
-                          disabled={!isEditingProfile}
-                          onChange={(e) =>
-                            setPrefsForm((prev) => ({ ...prev, smsDailyProgress: e.target.checked }))
                           }
                         />
                       </label>
@@ -513,6 +485,15 @@ const Sidebar = ({ title, user, onLogout, theme = "dark", onToggleTheme, showHea
 
   const goTo = (hash) => {
     if (!hash) return;
+    if (hash === "alerts") {
+      const target = `${location.pathname}#overview`;
+      navigate(target, { replace: false });
+      setTimeout(() => {
+        const el = document.getElementById("overview");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+      return;
+    }
     const target = `${location.pathname}#${hash}`;
     navigate(target, { replace: false });
     setTimeout(() => {

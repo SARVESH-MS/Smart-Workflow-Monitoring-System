@@ -206,6 +206,8 @@ export const notifyComplete = async ({ user, manager, task, project }) => {
   const slackTpl = await getTemplate("task.complete.slack", { body: "Complete: {{task.title}} ({{project.name}})" });
   const slackText = renderTemplate(slackTpl.body, { task, project, user, manager });
   await sendSlack({ text: slackText }).catch(() => null);
+
+  return;
 };
 
 export const notifyAssigned = async ({ user, manager, task, project }) => {
@@ -265,14 +267,7 @@ export const notifyAssigned = async ({ user, manager, task, project }) => {
 };
 
 export const notifyDelaySms = async ({ user, manager, task, project }) => {
-  if (!shouldNotifyDelay()) return;
-  if (!userPref(user, "smsDelay", false) && !userPref(manager, "smsDelay", false)) return;
-  const body = `Delay Alert: ${task.title} for ${project.name} is past deadline.`;
-  const numbers = [
-    userPref(manager, "smsDelay", false) ? manager?.phone : null,
-    userPref(user, "smsDelay", false) ? user?.phone : null
-  ].filter(Boolean);
-  await Promise.all(numbers.map((to) => sendSms({ to, body }).catch(() => null)));
+  return;
 };
 
 export const notifyMissingDailyProgress = async ({ user, manager, task, project, reminderKey, workdayEndsAtLabel }) => {
@@ -335,17 +330,5 @@ export const notifyMissingDailyProgress = async ({ user, manager, task, project,
       )
   );
 
-  const smsRecipients = [
-    { target: user, message: `SWMS reminder: upload today's progress for ${task.title} before ${workdayEndsAtLabel}.` },
-    {
-      target: manager,
-      message: `SWMS reminder: ${user?.name || "Employee"} has not uploaded today's progress for ${task.title} before ${workdayEndsAtLabel}.`
-    }
-  ].filter((item) => item.target?.phone && userPref(item.target, "smsDailyProgress", false));
-
-  await Promise.all(
-    smsRecipients.map((item) =>
-      sendSms({ to: item.target.phone, body: item.message }).catch(() => null)
-    )
-  );
+  return;
 };

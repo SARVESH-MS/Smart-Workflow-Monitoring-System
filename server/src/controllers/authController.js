@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import EmailLog from "../models/EmailLog.js";
 import Notification from "../models/Notification.js";
 import RegistrationRequest from "../models/RegistrationRequest.js";
+import AuditLog from "../models/AuditLog.js";
 import { logAudit } from "../services/auditService.js";
 import { getRequestMeta } from "../utils/requestMeta.js";
 
@@ -57,6 +58,24 @@ const findRequestByEmail = (email) => {
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+const shouldLogLogin = async (actorId, meta = {}) => {
+  if (!actorId) return false;
+  const windowMs = 8000;
+  const query = {
+    actorId,
+    action: "auth.login",
+    createdAt: { $gte: new Date(Date.now() - windowMs) }
+  };
+  if (meta.sessionId) {
+    query["meta.sessionId"] = meta.sessionId;
+  } else {
+    if (meta.ip) query["meta.ip"] = meta.ip;
+    if (meta.ua) query["meta.ua"] = meta.ua;
+  }
+  const recent = await AuditLog.findOne(query).select("_id").lean();
+  return !recent;
+};
+
 const warmGoogleCerts = () => {
   if (!process.env.GOOGLE_CLIENT_ID) return;
   googleClient.getFederatedSignonCerts().catch(() => null);
@@ -85,13 +104,14 @@ export const register = async (req, res) => {
   }
 
   const hashed = await bcrypt.hash(payload.password, 10);
-  await RegistrationRequest.create({
+  const request = await RegistrationRequest.create({
     name: payload.name,
     email: payload.email,
     password: hashed,
     role: payload.role,
     teamRole: payload.role === "manager" ? "manager" : payload.teamRole || "frontend"
   });
+  req.app.get("io")?.emit("registration-request:created", sanitizeRegistrationRequest(request));
 
   const admins = await User.find({ role: "admin" }).select("_id email name");
   const subject = `New account approval request: ${payload.name}`;
@@ -164,13 +184,16 @@ export const googleAuth = async (req, res) => {
     if (payload.role && user.role !== payload.role) {
       return res.status(403).json({ message: "Account does not match this portal" });
     }
-    await logAudit({
-      actorId: user._id,
-      action: "auth.login",
-      entityType: "User",
-      entityId: user._id,
-      meta: { ...getRequestMeta(req), provider: "google" }
-    });
+    const meta = { ...getRequestMeta(req), provider: "google" };
+    if (await shouldLogLogin(user._id, meta)) {
+      await logAudit({
+        actorId: user._id,
+        action: "auth.login",
+        entityType: "User",
+        entityId: user._id,
+        meta
+      });
+    }
     const token = signToken(user);
     if (timingEnabled) {
       const total = afterLookup - timingStart;
@@ -202,13 +225,14 @@ export const googleAuth = async (req, res) => {
   }
 
   const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
-  await RegistrationRequest.create({
+  const request = await RegistrationRequest.create({
     name,
     email,
     password: randomPasswordHash,
     role: payload.role,
     teamRole: payload.role === "manager" ? "manager" : payload.teamRole || "frontend"
   });
+  req.app.get("io")?.emit("registration-request:created", sanitizeRegistrationRequest(request));
 
   const admins = await User.find({ role: "admin" }).select("_id email");
   const subject = `New Google account approval request: ${name}`;
@@ -260,13 +284,16 @@ export const login = async (req, res) => {
   if (payload.role && user.role !== payload.role) {
     return res.status(403).json({ message: "Account does not match this portal" });
   }
-  await logAudit({
-    actorId: user._id,
-    action: "auth.login",
-    entityType: "User",
-    entityId: user._id,
-    meta: getRequestMeta(req)
-  });
+  const meta = getRequestMeta(req);
+  if (await shouldLogLogin(user._id, meta)) {
+    await logAudit({
+      actorId: user._id,
+      action: "auth.login",
+      entityType: "User",
+      entityId: user._id,
+      meta
+    });
+  }
   const token = signToken(user);
   return res.json({ token, user: sanitizeUser(user) });
 };
@@ -287,6 +314,20 @@ export const logout = async (req, res) => {
   });
   return res.json({ message: "Logged out" });
 };
+
+const sanitizeRegistrationRequest = (request) => ({
+  _id: request._id,
+  name: request.name,
+  email: request.email,
+  role: request.role,
+  teamRole: request.teamRole,
+  status: request.status,
+  rejectionReason: request.rejectionReason,
+  processedBy: request.processedBy,
+  processedAt: request.processedAt,
+  createdAt: request.createdAt,
+  updatedAt: request.updatedAt
+});
 
 const sanitizeUser = (user) => ({
   id: user._id,

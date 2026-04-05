@@ -6,6 +6,8 @@ import helmet from "helmet";
 import morgan from "morgan";
 import compression from "compression";
 import { Server } from "socket.io";
+import path from "path";
+import { fileURLToPath } from "url";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -26,14 +28,14 @@ import performanceRoutes from "./routes/performanceRoutes.js";
 import rbacRoutes from "./routes/rbacRoutes.js";
 import digestRoutes from "./routes/digestRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
-import path from "path";
-import { fileURLToPath } from "url";
 import { notFound, errorHandler } from "./middleware/error.js";
 import { slowLog } from "./middleware/slowLog.js";
 import { setupSockets } from "./sockets/index.js";
 import { startDailyProgressReminderService } from "./services/dailyProgressReminderService.js";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
 const isProduction = process.env.NODE_ENV === "production";
 const allowedOrigins = String(process.env.CLIENT_URL || "http://localhost:5173")
@@ -84,8 +86,6 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/", (req, res) => {

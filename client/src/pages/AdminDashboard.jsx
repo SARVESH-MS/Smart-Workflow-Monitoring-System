@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { listProjects, createProject, updateProject } from "../api/projects.js";
+import { listProjects, createProject, updateProject, deleteProject } from "../api/projects.js";
 import { summary } from "../api/analytics.js";
-import { listTasks } from "../api/tasks.js";
+import { listTasks, deleteTask } from "../api/tasks.js";
 import StatCard from "../components/StatCard.jsx";
 import Table from "../components/Table.jsx";
 import Modal from "../components/Modal.jsx";
@@ -41,6 +41,7 @@ const DisclosureIcon = ({ open }) => (
 const AdminDashboard = () => {
   const defaultWorkflow = ["Planning", "Design", "Development", "Testing", "Done"];
   const [projects, setProjects] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState(null);
   const [chartTaskLists, setChartTaskLists] = useState(null);
   const chartTaskPromiseRef = useRef(null);
@@ -58,7 +59,12 @@ const AdminDashboard = () => {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [draggedStage, setDraggedStage] = useState("");
+  const [deletingTaskId, setDeletingTaskId] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState("");
   const statsRefreshTimerRef = useRef(null);
+  const preferenceSaveTimersRef = useRef({});
+  const savedPreferenceSnapshotsRef = useRef({});
+  const preferenceRequestVersionRef = useRef({});
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -85,13 +91,99 @@ const AdminDashboard = () => {
     setDraggedStage("");
   };
 
+  const formatRoleLabel = (value) =>
+    String(value || "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (match) => match.toUpperCase());
+
+  const normalizeNotificationPrefs = (prefs = {}) => ({
+    emailDelay: Boolean(prefs?.emailDelay),
+    emailComplete: Boolean(prefs?.emailComplete),
+    smsDelay: Boolean(prefs?.smsDelay),
+    smsComplete: Boolean(prefs?.smsComplete),
+    smsDailyProgress: Boolean(prefs?.smsDailyProgress),
+    desktopDailyProgress:
+      prefs?.desktopDailyProgress === undefined ? true : Boolean(prefs?.desktopDailyProgress)
+  });
+
+  const buildNotificationPrefs = (user, key, value) => ({
+    ...normalizeNotificationPrefs(user.notificationPrefs),
+    [key]: value
+  });
+
+  const syncSavedPreferenceSnapshots = (userList) => {
+    savedPreferenceSnapshotsRef.current = Object.fromEntries(
+      (userList || []).map((user) => [user._id, normalizeNotificationPrefs(user.notificationPrefs)])
+    );
+  };
+
+  const mergeUserIntoLists = (user) => {
+    const normalizedUser = { ...user, _id: user.id || user._id };
+    if (!normalizedUser._id) return;
+    setUsers((prev) => {
+      const exists = prev.some((item) => String(item._id) === String(normalizedUser._id));
+      const next = exists
+        ? prev.map((item) => (String(item._id) === String(normalizedUser._id) ? { ...item, ...normalizedUser } : item))
+        : [normalizedUser, ...prev];
+      syncSavedPreferenceSnapshots(next);
+      return next;
+    });
+    setManagers((prev) => {
+      const exists = prev.some((item) => String(item._id) === String(normalizedUser._id));
+      if (normalizedUser.role !== "manager") {
+        return exists ? prev.filter((item) => String(item._id) !== String(normalizedUser._id)) : prev;
+      }
+      if (!exists) return [normalizedUser, ...prev];
+      return prev.map((item) => (String(item._id) === String(normalizedUser._id) ? { ...item, ...normalizedUser } : item));
+    });
+  };
+
+  const handleNotificationPreferenceChange = (user, key, value) => {
+    const userId = user._id;
+    const nextPrefs = buildNotificationPrefs(user, key, value);
+
+    setUsers((prev) =>
+      prev.map((item) =>
+        item._id === userId ? { ...item, notificationPrefs: nextPrefs } : item
+      )
+    );
+
+    window.clearTimeout(preferenceSaveTimersRef.current[userId]);
+    const requestVersion = (preferenceRequestVersionRef.current[userId] || 0) + 1;
+    preferenceRequestVersionRef.current[userId] = requestVersion;
+
+    preferenceSaveTimersRef.current[userId] = window.setTimeout(async () => {
+      try {
+        const response = await updateUserPreferences(userId, nextPrefs);
+        if (preferenceRequestVersionRef.current[userId] !== requestVersion) return;
+        const savedPrefs = normalizeNotificationPrefs(response?.user?.notificationPrefs || nextPrefs);
+        savedPreferenceSnapshotsRef.current[userId] = savedPrefs;
+        setUsers((prev) =>
+          prev.map((item) =>
+            item._id === userId ? { ...item, notificationPrefs: savedPrefs } : item
+          )
+        );
+      } catch (error) {
+        if (preferenceRequestVersionRef.current[userId] !== requestVersion) return;
+        const fallbackPrefs = savedPreferenceSnapshotsRef.current[userId] || normalizeNotificationPrefs();
+        setUsers((prev) =>
+          prev.map((item) =>
+            item._id === userId ? { ...item, notificationPrefs: fallbackPrefs } : item
+          )
+        );
+      }
+    }, 140);
+  };
+
   const loadOverview = async () => {
-    const [projectsData, statsData] = await Promise.all([
+    const [projectsData, statsData, tasksData] = await Promise.all([
       listProjects(),
-      summary()
+      summary(),
+      listTasks({ compact: 1, limit: 2000 })
     ]);
     setProjects(projectsData);
     setStats(statsData);
+    setTasks(tasksData || []);
     // Invalidate cached task lists so graphs can re-fetch when needed.
     setChartTaskLists(null);
   };
@@ -133,6 +225,20 @@ const AdminDashboard = () => {
     });
   };
 
+  const removeTaskFromChartLists = (task) => {
+    const taskId = String(task?._id || "");
+    if (!taskId) return;
+    setChartTaskLists((prev) => {
+      if (!prev) return prev;
+      return {
+        completedTasks: prev.completedTasks.filter((item) => String(item._id) !== taskId),
+        remainingTasks: prev.remainingTasks.filter((item) => String(item._id) !== taskId),
+        delayedTasks: prev.delayedTasks.filter((item) => String(item._id) !== taskId),
+        onTimeTasks: prev.onTimeTasks.filter((item) => String(item._id) !== taskId)
+      };
+    });
+  };
+
   const applyProjectToChartLists = (project) => {
     setChartTaskLists((prev) => {
       if (!prev || !project?._id) return prev;
@@ -159,6 +265,7 @@ const AdminDashboard = () => {
 
     if (usersResult.status === "fulfilled") {
       setUsers(usersResult.value);
+      syncSavedPreferenceSnapshots(usersResult.value);
     } else {
       console.error("Failed to load users", usersResult.reason);
     }
@@ -203,10 +310,25 @@ const AdminDashboard = () => {
     const socket = createSocket();
     socket.on("task:created", (task) => {
       applyTaskToChartLists(task);
+      setTasks((prev) =>
+        prev.some((item) => String(item._id) === String(task?._id))
+          ? prev
+          : [task, ...prev]
+      );
       queueStatsRefresh();
     });
     socket.on("task:updated", (task) => {
       applyTaskToChartLists(task);
+      setTasks((prev) => {
+        const exists = prev.some((item) => String(item._id) === String(task?._id));
+        if (!exists) return [task, ...prev];
+        return prev.map((item) => (String(item._id) === String(task?._id) ? { ...item, ...task } : item));
+      });
+      queueStatsRefresh();
+    });
+    socket.on("task:deleted", (task) => {
+      setTasks((prev) => prev.filter((item) => String(item._id) !== String(task?._id)));
+      removeTaskFromChartLists(task);
       queueStatsRefresh();
     });
     socket.on("project:created", (project) => {
@@ -227,6 +349,40 @@ const AdminDashboard = () => {
       applyProjectToChartLists(project);
       queueStatsRefresh();
     });
+    socket.on("project:deleted", (payload) => {
+      const projectId = String(payload?.id || payload?._id || "");
+      if (!projectId) return;
+      setProjects((prev) => prev.filter((item) => String(item._id) !== projectId));
+      setTasks((prev) => prev.filter((task) => String(task.projectId) !== projectId));
+      setChartTaskLists(null);
+      queueStatsRefresh();
+    });
+    socket.on("user:created", (user) => {
+      mergeUserIntoLists(user);
+    });
+    socket.on("user:updated", (user) => {
+      mergeUserIntoLists(user);
+    });
+    socket.on("registration-request:created", (request) => {
+      if (String(request?.status || "pending") !== "pending") return;
+      setRegistrationRequests((prev) =>
+        prev.some((item) => String(item._id) === String(request?._id))
+          ? prev
+          : [request, ...prev]
+      );
+    });
+    socket.on("registration-request:updated", (request) => {
+      const requestId = String(request?._id || "");
+      if (!requestId) return;
+      setRegistrationRequests((prev) => {
+        const exists = prev.some((item) => String(item._id) === requestId);
+        if (String(request?.status || "") !== "pending") {
+          return exists ? prev.filter((item) => String(item._id) !== requestId) : prev;
+        }
+        if (!exists) return [request, ...prev];
+        return prev.map((item) => (String(item._id) === requestId ? { ...item, ...request } : item));
+      });
+    });
     socket.on("presence:update", () => {
       if (sessionMonitorOpen) {
         loadSessionData();
@@ -234,6 +390,7 @@ const AdminDashboard = () => {
     });
     return () => {
       window.clearTimeout(statsRefreshTimerRef.current);
+      Object.values(preferenceSaveTimersRef.current).forEach((timer) => window.clearTimeout(timer));
       socket.disconnect();
     };
   }, [sessionMonitorOpen]);
@@ -260,39 +417,163 @@ const AdminDashboard = () => {
     loadTemplates();
   }, [templatesOpen]);
 
+  const handleDeleteTask = async (taskId, taskTitle) => {
+    if (!taskId || deletingTaskId) return;
+    const confirmed = window.confirm(`Delete "${taskTitle || "this task"}"? This cannot be undone.`);
+    if (!confirmed) return;
+    setDeletingTaskId(taskId);
+    try {
+      await deleteTask(taskId);
+      setTasks((prev) => prev.filter((task) => String(task._id) !== String(taskId)));
+      removeTaskFromChartLists({ _id: taskId });
+      queueStatsRefresh();
+    } finally {
+      setDeletingTaskId("");
+    }
+  };
+
+  const handleDeleteProject = async (projectId, projectName) => {
+    if (!projectId || deletingProjectId) return;
+    const confirmed = window.confirm(`Delete "${projectName || "this project"}"? This cannot be undone.`);
+    if (!confirmed) return;
+    setDeletingProjectId(projectId);
+    try {
+      await deleteProject(projectId);
+      setProjects((prev) => prev.filter((project) => String(project._id) !== String(projectId)));
+      setTasks((prev) => prev.filter((task) => String(task.projectId) !== String(projectId)));
+      setChartTaskLists(null);
+      queueStatsRefresh();
+    } finally {
+      setDeletingProjectId("");
+    }
+  };
+
   const columns = useMemo(
     () => [
       { key: "name", label: "Project" },
       { key: "description", label: "Description" },
       { key: "deadline", label: "Deadline" },
       { key: "manager", label: "Manager" },
-      { key: "status", label: "Status" }
+      { key: "status", label: "Status" },
+      { key: "actions", label: "Actions" }
     ],
     []
   );
 
-  const rows = projects.map((project) => ({
-    ...project,
-    deadline: formatDate(project.deadline),
-    manager: (
-      <select
-        className="rounded-lg bg-slate-900 px-2 py-1 text-xs"
-        value={project.managerId || ""}
-        onChange={async (e) => {
-          const managerId = e.target.value || null;
-          const updated = await updateProject(project._id, { managerId });
-          setProjects((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
-        }}
-      >
-        <option value="">Unassigned</option>
-        {managers.map((mgr) => (
-          <option key={mgr._id} value={mgr._id}>
-            {mgr.name}
-          </option>
-        ))}
-      </select>
-    )
-  }));
+  const taskColumns = useMemo(
+    () => [
+      { key: "title", label: "Task" },
+      { key: "project", label: "Project" },
+      { key: "assignee", label: "Assignee" },
+      { key: "status", label: "Status" },
+      { key: "deadline", label: "Deadline" },
+      { key: "actions", label: "Actions" }
+    ],
+    []
+  );
+
+  const rows = projects.map((project) => {
+    const isDeleting = deletingProjectId === project._id;
+    const isDone = String(project.status || "").toLowerCase() === "done";
+    const statusLabel = isDone ? "Done" : "In Progress";
+    return {
+      ...project,
+      deadline: formatDate(project.deadline),
+      manager: (
+        <select
+          className="rounded-lg bg-slate-900 px-2 py-1 text-xs"
+          value={project.managerId || ""}
+          onChange={async (e) => {
+            const managerId = e.target.value || null;
+            const updated = await updateProject(project._id, { managerId });
+            setProjects((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
+          }}
+        >
+          <option value="">Unassigned</option>
+          {managers.map((mgr) => (
+            <option key={mgr._id} value={mgr._id}>
+              {mgr.name}
+            </option>
+          ))}
+        </select>
+      ),
+      actions: (
+        <button
+          type="button"
+          className="btn-ghost px-2 py-1 text-xs border-rose-400/70 text-rose-300 hover:border-rose-300 hover:bg-rose-950/40 hover:text-rose-100"
+          onClick={() => handleDeleteProject(project._id, project.name)}
+          disabled={isDeleting}
+        >
+          {isDeleting ? "Deleting..." : "Delete"}
+        </button>
+      ),
+      status: (
+        <span
+          className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold tracking-wide whitespace-nowrap ${
+            isDone
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+              : "border-sky-500/30 bg-sky-500/10 text-sky-200"
+          }`}
+        >
+          {statusLabel}
+        </span>
+      )
+    };
+  });
+  const projectNameById = useMemo(
+    () =>
+      projects.reduce((acc, project) => {
+        acc[String(project._id)] = project.name;
+        return acc;
+      }, {}),
+    [projects]
+  );
+  const userNameById = useMemo(
+    () =>
+      users.reduce((acc, user) => {
+        acc[String(user._id)] = user.name;
+        return acc;
+      }, {}),
+    [users]
+  );
+  const formatTaskStatusLabel = (status) =>
+    String(status || "todo")
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  const taskRows = tasks.map((task) => {
+    const isDeleting = deletingTaskId === task._id;
+    return {
+      ...task,
+      title: (
+        <div className="min-w-[12rem]">
+          <div className="font-medium text-slate-100">{task.title}</div>
+          {task.description ? (
+            <div className="mt-1 text-xs text-slate-400">{task.description}</div>
+          ) : null}
+        </div>
+      ),
+      project: projectNameById[String(task.projectId)] || "-",
+      assignee: userNameById[String(task.userId)] || "-",
+      status: (
+        <span className="inline-flex rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200">
+          {formatTaskStatusLabel(task.status)}
+        </span>
+      ),
+      deadline: formatDate(task.deadline),
+      actions: (
+        <button
+          type="button"
+          className="btn-ghost px-2 py-1 text-xs border-rose-400/70 text-rose-300 hover:border-rose-300 hover:bg-rose-950/40 hover:text-rose-100"
+          onClick={() => handleDeleteTask(task._id, task.title)}
+          disabled={isDeleting}
+        >
+          {isDeleting ? "Deleting..." : "Delete"}
+        </button>
+      )
+    };
+  });
   const onlineSessions = sessionMonitor.filter((item) => item.isOnline);
 
   const ensureChartTaskLists = async () => {
@@ -349,6 +630,7 @@ const AdminDashboard = () => {
     });
   };
 
+
   return (
     <div className="dashboard-page grid min-w-0 gap-6">
       <div id="overview" className="flex flex-wrap items-center justify-between gap-4 scroll-mt-6">
@@ -372,7 +654,16 @@ const AdminDashboard = () => {
       <GlobalSearch />
 
       <div id="tasks" className="scroll-mt-6">
-        <Table columns={columns} data={rows} />
+        <div className="grid gap-4">
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-100">Tasks</div>
+            <Table columns={taskColumns} data={taskRows} />
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-100">Projects</div>
+            <Table columns={columns} data={rows} />
+          </div>
+        </div>
       </div>
 
       <div id="reports" className="grid gap-4 lg:grid-cols-2 scroll-mt-6">
@@ -472,50 +763,30 @@ const AdminDashboard = () => {
                 <th className="py-2 pr-4">Role</th>
                 <th className="py-2 pr-4">Email Delay</th>
                 <th className="py-2 pr-4">Email Complete</th>
-                <th className="py-2 pr-4">SMS Delay</th>
-                <th className="py-2 pr-4">SMS Daily Progress</th>
                 <th className="py-2 pr-4">Laptop Popup</th>
               </tr>
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user._id} className="border-t border-slate-800">
+                <tr key={user._id} className="border-t border-slate-800 transition-colors hover:bg-slate-900/30">
                   <td className="py-2 pr-4">
                     <div className="text-slate-200">{user.name}</div>
                     <div className="text-xs text-slate-500">{user.email}</div>
                   </td>
-                  <td className="py-2 pr-4 text-slate-300">{user.role}</td>
+                  <td className="py-2 pr-4 text-slate-300">{formatRoleLabel(user.role)}</td>
                   {[
                     { key: "emailDelay", label: "Email Delay" },
                     { key: "emailComplete", label: "Email Complete" },
-                    { key: "smsDelay", label: "SMS Delay" },
-                    { key: "smsDailyProgress", label: "SMS Daily Progress" },
-                    { key: "desktopDailyProgress", label: "Laptop Popup" }
+                    { key: "desktopDailyProgress", label: "Desktop Popup" }
                   ].map((pref) => (
                     <td key={pref.key} className="py-2 pr-4">
                       <input
                         type="checkbox"
                         className="h-4 w-4 accent-blue-500"
                         checked={Boolean(user.notificationPrefs?.[pref.key])}
-                        onChange={async (e) => {
-                          const next = {
-                            emailDelay: Boolean(user.notificationPrefs?.emailDelay),
-                            emailComplete: Boolean(user.notificationPrefs?.emailComplete),
-                            smsDelay: Boolean(user.notificationPrefs?.smsDelay),
-                            smsDailyProgress: Boolean(user.notificationPrefs?.smsDailyProgress),
-                            desktopDailyProgress:
-                              user.notificationPrefs?.desktopDailyProgress === undefined
-                                ? true
-                                : Boolean(user.notificationPrefs?.desktopDailyProgress),
-                            [pref.key]: e.target.checked
-                          };
-                          await updateUserPreferences(user._id, next);
-                          setUsers((prev) =>
-                            prev.map((u) =>
-                              u._id === user._id ? { ...u, notificationPrefs: next } : u
-                            )
-                          );
-                        }}
+                        title={`${pref.label} for ${user.name}`}
+                        aria-label={`${pref.label} for ${user.name}`}
+                        onChange={(e) => handleNotificationPreferenceChange(user, pref.key, e.target.checked)}
                       />
                     </td>
                   ))}

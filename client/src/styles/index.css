@@ -125,6 +125,11 @@ body::-webkit-scrollbar {
   animation: dashboardCardPulse 4.6s ease-in-out infinite;
 }
 
+.dashboard-stat-card {
+  min-height: 106px;
+  justify-content: center;
+}
+
 .dashboard-disclosure-card {
   padding: clamp(1.15rem, 2vw, 1.6rem);
 }

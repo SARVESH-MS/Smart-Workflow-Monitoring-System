@@ -16,7 +16,9 @@ const Login = ({ role }) => {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const portalRole = role || selectedRole;
+  const enforceRole = Boolean(role);
   const portalLabel = useMemo(() => ROLE_LABELS[portalRole] || "Role", [portalRole]);
 
   useEffect(() => {
@@ -33,14 +35,20 @@ const Login = ({ role }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
-      if (role && !portalRole) {
+      if (enforceRole && !portalRole) {
         setError("Select a role to continue.");
         return;
       }
-      const payload = portalRole ? { ...form, role: portalRole } : form;
+      const payload = {
+        ...form,
+        email: form.email.trim(),
+        ...(enforceRole ? { role: portalRole } : {})
+      };
       const data = await login(payload);
-      if (portalRole && data.user.role !== portalRole) {
+      if (enforceRole && data.user.role !== portalRole) {
         setError(`${portalLabel} portal only. Use the correct login page.`);
         return;
       }
@@ -50,12 +58,15 @@ const Login = ({ role }) => {
       if (data.user.role === "employee") navigate(`/employee/${data.user.id}`);
     } catch (err) {
       setError(err.response?.data?.message || "Login failed");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleGoogleLogin = async (credential) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
-      const enforceRole = Boolean(portalRole);
       const data = await googleAuth({
         credential,
         mode: "login",
@@ -71,6 +82,8 @@ const Login = ({ role }) => {
       if (data.user.role === "employee") navigate(`/employee/${data.user.id}`);
     } catch (err) {
       setError(err.response?.data?.message || "Google login failed");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -93,6 +106,7 @@ const Login = ({ role }) => {
                 type="button"
                 className={selectedRole === key ? "btn-primary px-3 py-1 text-xs" : "btn-ghost px-3 py-1 text-xs"}
                 onClick={() => setSelectedRole(key)}
+                disabled={isSubmitting}
               >
                 {ROLE_LABELS[key]}
               </button>
@@ -108,6 +122,7 @@ const Login = ({ role }) => {
           placeholder="Email"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
+          disabled={isSubmitting}
         />
         </label>
         <label className="grid gap-2">
@@ -118,12 +133,15 @@ const Login = ({ role }) => {
           placeholder="Password"
           value={form.password}
           onChange={(e) => setForm({ ...form, password: e.target.value })}
+          disabled={isSubmitting}
         />
         </label>
         {error && <div className="text-sm text-red-400">{error}</div>}
-        <button className="btn-primary" type="submit">Sign In</button>
+        <button className="btn-primary" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in..." : "Sign In"}
+        </button>
         <GoogleAuthButton text="signin_with" onCredential={handleGoogleLogin} onError={setError} />
-        <button className="btn-ghost" type="button" onClick={() => goToAuthRoute("/register")}>
+        <button className="btn-ghost" type="button" onClick={() => goToAuthRoute("/register")} disabled={isSubmitting}>
           Sign Up
         </button>
       </form>

@@ -4,6 +4,7 @@ export const listTasks = (params) => api.get("/api/tasks", { params }).then((res
 export const getTask = (id) => api.get(`/api/tasks/${id}`).then((res) => res.data);
 export const createTask = (data) => api.post("/api/tasks", data).then((res) => res.data);
 export const updateTask = (id, data) => api.put(`/api/tasks/${id}`, data).then((res) => res.data);
+export const deleteTask = (id) => api.delete(`/api/tasks/${id}`).then((res) => res.data);
 export const addTaskProgress = (id, data) => api.post(`/api/tasks/${id}/progress`, data).then((res) => res.data);
 export const recheckTaskProof = (id, entryId) => api.post(`/api/tasks/${id}/progress/${entryId}/recheck`).then((res) => res.data);
 export const uploadTaskEvidence = (file) => {

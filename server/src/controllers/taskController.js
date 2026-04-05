@@ -709,6 +709,15 @@ const emitTaskUpdated = (req, task) => {
   req.app.get("io").emit("task:updated", toTaskResponse(task));
 };
 
+const emitTaskDeleted = (req, task) => {
+  if (!task?._id) return;
+  req.app.get("io").emit("task:deleted", {
+    _id: task._id,
+    projectId: task.projectId,
+    userId: task.userId
+  });
+};
+
 export const createTask = async (req, res) => {
   const payload = taskSchema.parse(req.body);
   const task = await Task.create({
@@ -815,6 +824,44 @@ export const updateTask = async (req, res) => {
   }
   emitTaskUpdated(req, updated);
   res.json(toTaskResponse(updated));
+};
+
+export const deleteTask = async (req, res) => {
+  const task = await Task.findById(req.params.id);
+  const access = await ensureTaskAccess(req, task);
+  if (!access.ok) {
+    return res.status(access.status).json({ message: access.message });
+  }
+
+  const attachments = Array.isArray(task?.progressLogs)
+    ? task.progressLogs
+        .map((log) => log?.evidenceAttachment?.url)
+        .filter((url) => Boolean(url))
+    : [];
+
+  await Promise.allSettled(
+    attachments.map(async (url) => {
+      if (!isLocalUploadUrl(url)) return;
+      const filePath = resolveUploadedEvidencePath(url);
+      if (!filePath) return;
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        return;
+      }
+    })
+  );
+
+  await Task.deleteOne({ _id: task._id });
+  await logAudit({
+    actorId: req.user?.id,
+    action: "task.delete",
+    entityType: "Task",
+    entityId: task._id,
+    before: task.toObject()
+  });
+  emitTaskDeleted(req, task);
+  res.json({ id: task._id });
 };
 
 export const uploadTaskEvidence = async (req, res) => {

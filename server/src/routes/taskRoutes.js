@@ -7,6 +7,7 @@ import {
   listTasks,
   getTask,
   updateTask,
+  deleteTask,
   uploadTaskEvidence,
   addTaskProgressLog,
   recheckTaskProgressProof,
@@ -85,6 +86,7 @@ router.post("/progress/upload", auth, role("admin", "manager", "employee"), uplo
 router.get("/:id", auth, asyncHandler(getTask));
 router.post("/", auth, role("admin", "manager"), asyncHandler(createTask));
 router.put("/:id", auth, role("admin", "manager"), asyncHandler(updateTask));
+router.delete("/:id", auth, role("admin", "manager"), asyncHandler(deleteTask));
 router.post("/:id/progress", auth, role("admin", "manager", "employee"), asyncHandler(addTaskProgressLog));
 router.post("/:id/progress/:entryId/recheck", auth, role("admin", "manager"), asyncHandler(recheckTaskProgressProof));
 router.post("/:id/start", auth, role("manager", "employee"), asyncHandler(startTaskTimer));

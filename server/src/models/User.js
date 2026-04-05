@@ -23,6 +23,7 @@ const UserSchema = new mongoose.Schema(
       emailDelay: { type: Boolean, default: true },
       emailComplete: { type: Boolean, default: false },
       smsDelay: { type: Boolean, default: false },
+      smsComplete: { type: Boolean, default: false },
       smsDailyProgress: { type: Boolean, default: false },
       desktopDailyProgress: { type: Boolean, default: true }
     }
