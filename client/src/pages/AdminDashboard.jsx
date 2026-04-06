@@ -472,10 +472,22 @@ const AdminDashboard = () => {
     []
   );
 
+  const formatProjectStatusLabel = (status) => {
+    const value = String(status || "").toLowerCase();
+    if (value === "done") return "Done";
+    if (value === "todo" || value === "planning") return "To Do";
+    if (value === "in_progress" || value === "design" || value === "development" || value === "testing") {
+      return "In Progress";
+    }
+    return "In Progress";
+  };
+
   const rows = projects.map((project) => {
     const isDeleting = deletingProjectId === project._id;
-    const isDone = String(project.status || "").toLowerCase() === "done";
-    const statusLabel = isDone ? "Done" : "In Progress";
+    const normalized = String(project.status || "").toLowerCase();
+    const statusLabel = formatProjectStatusLabel(project.status);
+    const isDone = normalized === "done";
+    const isTodo = normalized === "todo" || normalized === "planning";
     return {
       ...project,
       deadline: formatDate(project.deadline),
@@ -512,7 +524,9 @@ const AdminDashboard = () => {
           className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold tracking-wide whitespace-nowrap ${
             isDone
               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-              : "border-sky-500/30 bg-sky-500/10 text-sky-200"
+              : isTodo
+                ? "border-slate-500/40 bg-slate-500/10 text-slate-200"
+                : "border-sky-500/30 bg-sky-500/10 text-sky-200"
           }`}
         >
           {statusLabel}

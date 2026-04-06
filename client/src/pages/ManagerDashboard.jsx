@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { listProjects } from "../api/projects.js";
+import { listProjects, updateProjectStatus } from "../api/projects.js";
 import { listTasks, getTask, createTask, updateTask, deleteTask, recheckTaskProof } from "../api/tasks.js";
 import api from "../api/client.js";
 import StatCard from "../components/StatCard.jsx";
@@ -77,6 +77,7 @@ const ManagerDashboard = () => {
   const [recheckingEntryId, setRecheckingEntryId] = useState("");
   const [recheckFeedback, setRecheckFeedback] = useState({ message: "", tone: "info" });
   const [statusUpdatingTaskId, setStatusUpdatingTaskId] = useState("");
+  const [updatingProjectId, setUpdatingProjectId] = useState("");
   const [openProgressTaskId, setOpenProgressTaskId] = useState("");
   const [deletingTaskId, setDeletingTaskId] = useState("");
   const [form, setForm] = useState({
@@ -435,6 +436,22 @@ const ManagerDashboard = () => {
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
+
+  const normalizeProjectStatus = (status) => {
+    const value = String(status || "").toLowerCase();
+    if (value === "done") return "done";
+    if (value === "todo") return "todo";
+    if (value === "in_progress") return "in_progress";
+    if (value === "planning") return "todo";
+    return "in_progress";
+  };
+
+  const formatProjectStatusLabel = (status) => {
+    const value = normalizeProjectStatus(status);
+    if (value === "done") return "Done";
+    if (value === "todo") return "To Do";
+    return "In Progress";
+  };
 
   const getTaskStatusToneClass = (status) =>
     status === "done"
@@ -1197,9 +1214,30 @@ const ManagerDashboard = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-400">
-                  <div className="rounded-full border border-slate-700 px-2 py-1 uppercase">
-                    {project.status}
-                  </div>
+                  <select
+                    className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-1 text-[11px] uppercase tracking-wide text-slate-100"
+                    value={normalizeProjectStatus(project.status)}
+                    disabled={updatingProjectId === project._id}
+                    onChange={async (e) => {
+                      const nextStatus = e.target.value;
+                      if (nextStatus === normalizeProjectStatus(project.status)) return;
+                      setUpdatingProjectId(project._id);
+                      try {
+                        const updated = await updateProjectStatus(project._id, nextStatus);
+                        setProjects((prev) =>
+                          prev.map((item) =>
+                            String(item._id) === String(updated._id) ? { ...item, ...updated } : item
+                          )
+                        );
+                      } finally {
+                        setUpdatingProjectId("");
+                      }
+                    }}
+                  >
+                    <option value="todo">{formatProjectStatusLabel("todo")}</option>
+                    <option value="in_progress">{formatProjectStatusLabel("in_progress")}</option>
+                    <option value="done">{formatProjectStatusLabel("done")}</option>
+                  </select>
                   <div className="text-right">{formatDate(project.deadline)}</div>
                 </div>
               </div>
